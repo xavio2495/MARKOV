@@ -1,60 +1,67 @@
-# AI coding agent guide
+# Copilot Instructions for this Repo
 
-This repo is a pnpm monorepo for a Hardhat 3 plugin and a minimal example project. Build in `packages/plugin`; try it in `packages/example-project`.
+This repo is a pnpm monorepo with a Hardhat v3 plugin template, a sample Hardhat v3 project, and a separate EIP-2535 diamond reference project (Hardhat v2). Use these rules to be productive immediately.
 
 ## Big picture
-- Packages
-  - `packages/plugin`: Plugin source (TypeScript ESM). Entry `src/index.ts`; built to `dist/`.
-  - `packages/example-project`: Minimal Hardhat project to run the plugin.
-- Plugin (Hardhat 3) architecture
-  - Default export in `src/index.ts` with: `id`, `hookHandlers` (config, network), and `tasks` built via `task(...).build()`.
-  - Config lifecycle: `src/hooks/config.ts` wires `validatePluginConfig` and `resolvePluginConfig` from `src/config.ts`.
-  - Types: `src/type-extensions.ts` extends `HardhatUserConfig`/`HardhatConfig` with `myConfig` (see `src/types.ts`).
-  - Network hooks: `src/hooks/network.ts` logs `newConnection` and `onRequest`.
+- Monorepo layout:
+  - `packages/plugin`: Hardhat v3 plugin (currently "hardhat-my-plugin"). Entry: `src/index.ts`. Built output in `dist/`.
+  - `packages/example-project`: Minimal Hardhat v3 project that uses the plugin via workspace link (`hardhat-my-plugin": "workspace:*"`).
+  - `EIP2535-Diamonds-Reference-Implementation/`: Standalone Hardhat v2 JS project for diamonds; not integrated with the plugin.
+- Plugin architecture:
+  - Registers via `export default` in `packages/plugin/src/index.ts` with id `hardhat-my-plugin`.
+  - Uses Hardhat v3 Plugin API: hook handlers (`src/hooks/config.ts`, `src/hooks/network.ts`), tasks (declared in `index.ts`, action in `src/tasks/*.ts`).
+  - Config extension: user config type + validation + resolution in `src/type-extensions.ts` and `src/config.ts`.
 
-## Key files to know
-- `packages/plugin/src/index.ts` — registers task `my-task` and hooks.
-- `packages/plugin/src/tasks/my-task.ts` — action; prints `hre.config.myConfig.greeting`.
-- `packages/plugin/test/` — Node test runner tests (`test/example-tests.ts`); fixture utilities in `test/helpers/fixture-projects.ts` load `test/fixture-projects/base-project`.
-- `packages/example-project/hardhat.config.ts` — consumes plugin; sets `myConfig.greeting`.
+## Workflows (use pnpm)
+- From repo root:
+  - Install/build/test:
+    ```pwsh
+    pnpm install
+    pnpm build
+    pnpm test
+    ```
+  - Develop plugin with watch, then exercise it in the example project:
+    ```pwsh
+    pnpm -C packages/plugin watch
+    cd packages/example-project
+    pnpm hardhat my-task
+    ```
+- EIP2535 reference (isolated; uses Hardhat v2/ethers v5):
+  ```pwsh
+  cd EIP2535-Diamonds-Reference-Implementation
+  npm install
+  npx hardhat test
+  ```
 
 ## Conventions and patterns
-- ESM throughout; in TS source import local modules with `.js` (e.g., `import "./tasks/my-task.js"`) so compiled JS resolves.
-- Define tasks in `src/index.ts`; keep actions in `src/tasks/<name>.ts` and dynamically import in `setAction`.
-- Extend config only via `src/config.ts` (validate/resolve) and surface types in `src/type-extensions.ts`.
-- Testing helpers:
-  - Inline HRE: `createHardhatRuntimeEnvironment({ plugins: [MyPlugin], ... })`.
-  - Fixture HRE: `createFixtureProjectHRE("base-project")`.
+- Task pattern:
+  - Declare in `src/index.ts` with `task("name").addOption(...).setAction(() => import("./tasks/<file>.js"))`.
+  - Implement default-exported action in `src/tasks/<file>.ts` with `(args, hre)`; prefer `hre.config.myConfig` for plugin options. Example: `src/tasks/my-task.ts` prints `${hre.config.myConfig.greeting}, ${args.who}!`.
+- Config pattern:
+  - Add user-facing fields to `MyPluginUserConfig` and resolved `MyPluginConfig` in `src/types.ts` (generated here as `src/types.ts` is not present; extend existing `src/type-extensions.ts`).
+  - Validate in `validatePluginConfig` and resolve defaults in `resolvePluginConfig` (`src/config.ts`). Wire via `src/hooks/config.ts`.
+- Hooks:
+  - `src/hooks/network.ts` shows how to observe connections and JSON-RPC requests. Follow this structure for additional network behaviors.
+- Testing pattern:
+  - Node test runner with `@nomicfoundation/hardhat-node-test-reporter`.
+  - Two styles in `packages/plugin/test/`:
+    - Fixture project: `helpers/fixture-projects.ts` + `fixture-projects/base-project`. Use `createFixtureProjectHRE("base-project")` then `hre.tasks.getTask("...").run()`.
+    - Inline HRE: `createHardhatRuntimeEnvironment({ plugins: [Plugin], ... })` to test config and tasks without a fixture.
+- Lint/format/TS:
+  - ESLint configured in `packages/plugin/eslint.config.js` (TypeScript-aware). TS 5.8, Node 22 target. Use `pnpm -C packages/plugin lint`.
 
-## Developer workflows
-- From repo root:
-  - Install/build: `pnpm install` then `pnpm build`
-  - Test: `pnpm test` (Node test runner + `@nomicfoundation/hardhat-node-test-reporter`)
-  - Lint/format: `pnpm lint` / `pnpm lint:fix`
-  - Dev watch (plugin): `pnpm watch`
-- Manual try-out:
-  - `cd packages/example-project`
-  - Run task: `pnpm hardhat my-task` → prints greeting (default "Hello" or configured)
-  - Run script: `pnpm hardhat run scripts/example-script.ts` (demonstrates provider usage)
-- CI: `.github/workflows/ci.yml` runs build, test, lint on Node 22 and 24.
+## Integration boundaries
+- Do NOT mix the EIP2535 project’s dependencies with the plugin. The diamond reference uses Hardhat v2/ethers v5; the plugin and example use Hardhat v3.
+- The root `AGENT.md` describes a future "markov" plugin vision. Treat it as non-authoritative; implement only what exists in `packages/plugin` unless an issue/task requests otherwise.
 
-## Extending the plugin (examples)
-- New task: add `src/tasks/hello.ts` (default export action) and in `src/index.ts` register with `task("hello").addOption(...).setAction(() => import("./tasks/hello.js")).build()`.
-- New config option: update `src/types.ts` + `src/type-extensions.ts`; validate in `validatePluginConfig`; default in `resolvePluginConfig`; consume via `hre.config.myConfig.<field>`.
-- Network behavior: modify `src/hooks/network.ts` handlers (`newConnection`, `onRequest`).
+## Useful references in code
+- Plugin entry and task registration: `packages/plugin/src/index.ts`.
+- Config validation/resolution: `packages/plugin/src/config.ts` and `src/hooks/config.ts`.
+- Type extensions: `packages/plugin/src/type-extensions.ts`.
+- Example task: `packages/plugin/src/tasks/my-task.ts`.
+- Example usage project: `packages/example-project/hardhat.config.ts`.
+- Diamond reference docs: `EIP2535-Diamonds-Reference-Implementation/README.md`.
 
-## Important context
-- `AGENT.md` outlines a future “markov” diamond-versioning plugin. Current code is the minimal template (`hardhat-my-plugin`). Treat `AGENT.md` as a proposal, not current behavior.
-
-## EIP-2535 reference (included in repo)
-- The folder `EIP2535-Diamonds-Reference-Implementation/` contains the upstream reference diamond contracts and a standalone Hardhat (JS) project:
-  - Key contracts: `contracts/Diamond.sol`, `contracts/facets/*.sol`, `contracts/interfaces/*.sol`, `contracts/libraries/LibDiamond.sol`.
-  - Scripts/tests: `scripts/deploy.js`, `scripts/libraries/diamond.js`, `test/diamondTest.js`.
-- It is not wired into the plugin or example project; use it as a reference for future “markov” work in `AGENT.md`.
-- Keep it isolated (JS/CommonJS). The plugin uses TypeScript + ESM. Don’t copy files into `packages/example-project` unless you’re intentionally integrating.
-- To run the reference project (optional):
-  - From repo root:
-    - `cd EIP2535-Diamonds-Reference-Implementation`
-    - `npm install`
-    - `npx hardhat test` (runs its own tests)
-    - `npx hardhat run scripts/deploy.js`
+## When adding features
+- Follow the existing patterns: add a task file under `src/tasks`, register it in `src/index.ts`, extend config via `src/config.ts` + `src/type-extensions.ts`, and add tests in `packages/plugin/test` using one of the demonstrated approaches.
+- Keep commands and tests runnable from Windows PowerShell (default shell here).
