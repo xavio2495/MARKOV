@@ -45,3 +45,16 @@ This repo is a pnpm monorepo for a Hardhat 3 plugin and a minimal example projec
 
 ## Important context
 - `AGENT.md` outlines a future “markov” diamond-versioning plugin. Current code is the minimal template (`hardhat-my-plugin`). Treat `AGENT.md` as a proposal, not current behavior.
+
+## EIP-2535 reference (included in repo)
+- The folder `EIP2535-Diamonds-Reference-Implementation/` contains the upstream reference diamond contracts and a standalone Hardhat (JS) project:
+  - Key contracts: `contracts/Diamond.sol`, `contracts/facets/*.sol`, `contracts/interfaces/*.sol`, `contracts/libraries/LibDiamond.sol`.
+  - Scripts/tests: `scripts/deploy.js`, `scripts/libraries/diamond.js`, `test/diamondTest.js`.
+- It is not wired into the plugin or example project; use it as a reference for future “markov” work in `AGENT.md`.
+- Keep it isolated (JS/CommonJS). The plugin uses TypeScript + ESM. Don’t copy files into `packages/example-project` unless you’re intentionally integrating.
+- To run the reference project (optional):
+  - From repo root:
+    - `cd EIP2535-Diamonds-Reference-Implementation`
+    - `npm install`
+    - `npx hardhat test` (runs its own tests)
+    - `npx hardhat run scripts/deploy.js`
