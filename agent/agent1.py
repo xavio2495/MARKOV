@@ -13,7 +13,6 @@ from uagents_core.contrib.protocols.chat import (
     chat_protocol_spec,
 )
 from pyswip import Prolog
-import motto  # from metta-motto
 
 # ASI:One setup
 ASI_API_KEY = '<YOUR_ASI_ONE_API_KEY>'  # Replace with your key
@@ -27,7 +26,6 @@ MCP_URL = 'https://mcp.blockscout.com/mcp'
 
 # MeTTa-WAM setup for knowledge graph
 prolog = Prolog()
-# Load MeTTa-WAM module (adjust path to your cloned metta-wam.pl)
 prolog.consult('path/to/metta-wam/metta-wam.pl')  # Replace with actual path
 # Load initial knowledge (example: add vuln rules using Prolog assertz)
 prolog.assertz('(vuln(reentrancy, "External calls before state update", "High: Potential fund loss", "Use checks-effects-interactions pattern"))')
@@ -78,14 +76,14 @@ def get_code_from_hardhat(file_path):
     except Exception as e:
         return f"Error: {str(e)}"
 
-# Use metta-motto to enhance prompt with MeTTa-WAM reasoning
+# Enhance prompt with MeTTa-WAM reasoning (using direct prolog.query)
 def enhance_with_metta(query):
     try:
-        motto_agent = motto.Motto(prolog)  # Adapt if needed for Prolog
-        reasoned = motto_agent.chain(query, model=client, prompt_template="Reason about {query} using knowledge graph: query for impacts and mitigations")
-        return reasoned
+        reasoning = list(prolog.query("vuln(V, D, I, M)"))  # Query for vulns; adapt for your facts
+        reasoned_str = json.dumps(reasoning)  # Format as string for prompt
+        return f"{query} with reasoning: {reasoned_str}"
     except Exception as e:
-        return f"MeTTa-WAM error: {e}"
+        return f"MeTTa-WAM error: {e}. {query}"
 
 @protocol.on_message(ChatMessage)
 async def handle_message(ctx: Context, sender: str, msg: ChatMessage):
@@ -125,7 +123,7 @@ async def handle_message(ctx: Context, sender: str, msg: ChatMessage):
     
     # MeTTa-WAM reasoning
     try:
-        metta_reasoning = list(prolog.query('match(self, vuln(V, D, I, M), (V, D, I, M))'))  # Query KG with more details
+        metta_reasoning = list(prolog.query('vuln(V, D, I, M)'))  # Query KG with more details
         ctx.logger.info(f"MeTTa-WAM reasoning: {metta_reasoning}")
     except Exception as e:
         metta_reasoning = []
@@ -191,7 +189,7 @@ async def handle_task_req(ctx: Context, sender: str, msg: TaskRequest):
             ctx.logger.info(f"Sent TaskResult for query_id {msg.query_id}")
             
             # Update MeTTa-WAM with new knowledge
-            prolog.assertz(f'(audit-result("{analysis_result}"))')
+            prolog.assertz(f'(audit_result("{analysis_result}"))')
             ctx.logger.info("Updated MeTTa-WAM knowledge")
         except Exception as e:
             ctx.logger.error(f"Task processing failed: {e}")

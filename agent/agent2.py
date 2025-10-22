@@ -14,7 +14,6 @@ from uagents_core.contrib.protocols.chat import (
     chat_protocol_spec,
 )
 from pyswip import Prolog
-import motto  # from metta-motto
 
 ASI_API_KEY = '<YOUR_ASI_ONE_API_KEY>'
 client = OpenAI(
@@ -76,14 +75,14 @@ def generate_gas_chart(gas_data):
     except Exception as e:
         return f'Error generating chart: {e}'
 
-# Use metta-motto to enhance prompt with MeTTa-WAM reasoning
+# Enhance prompt with MeTTa-WAM reasoning (using direct prolog.query)
 def enhance_with_metta(query):
     try:
-        motto_agent = motto.Motto(prolog)  # Adapt if needed
-        reasoned = motto_agent.chain(query, model=client, prompt_template="Reason about {query} using knowledge graph: include POC if applicable")
-        return reasoned
+        reasoning = list(prolog.query("edge_case(E, D, I, M)"))  # Query for edge cases
+        reasoned_str = json.dumps(reasoning)
+        return f"{query} with reasoning: {reasoned_str}"
     except Exception as e:
-        return f"MeTTa-WAM error: {e}"
+        return f"MeTTa-WAM error: {e}. {query}"
 
 @protocol.on_message(ChatMessage)
 async def handle_message(ctx: Context, sender: str, msg: ChatMessage):
@@ -107,7 +106,7 @@ async def handle_message(ctx: Context, sender: str, msg: ChatMessage):
     
     # MeTTa-WAM enhancement
     try:
-        metta_reasoning = list(prolog.query('match(self, edge_case(E, D, I, M), (E, D, I, M))'))
+        metta_reasoning = list(prolog.query('edge_case(E, D, I, M)'))
         ctx.logger.info(f"MeTTa-WAM reasoning: {metta_reasoning}")
     except Exception as e:
         metta_reasoning = []

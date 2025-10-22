@@ -11,7 +11,6 @@ from uagents_core.contrib.protocols.chat import (
     chat_protocol_spec,
 )
 from pyswip import Prolog
-import motto  # from metta-motto
 
 # ASI:One setup
 ASI_API_KEY = '<YOUR_ASI_ONE_API_KEY>'
@@ -50,14 +49,14 @@ async def startup(ctx: Context):
     # Initialize storage
     ctx.storage.set("aggregated", {})
 
-# Use metta-motto to enhance routing with MeTTa-WAM
+# Enhance prompt with MeTTa-WAM reasoning (using direct prolog.query)
 def enhance_with_metta(query):
     try:
-        motto_agent = motto.Motto(prolog)  # Adapt if needed
-        reasoned = motto_agent.chain(query, model=client, prompt_template="Classify and route query {query} using knowledge graph")
-        return reasoned
+        reasoning = list(prolog.query("route(R, K)"))  # Query for routes
+        reasoned_str = json.dumps(reasoning)
+        return f"{query} with reasoning: {reasoned_str}"
     except Exception as e:
-        return f"MeTTa-WAM error: {e}"
+        return f"MeTTa-WAM error: {e}. {query}"
 
 # Models for inter-agent communication
 class TaskRequest(Model):

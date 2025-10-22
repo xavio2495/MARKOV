@@ -13,7 +13,6 @@ from uagents_core.contrib.protocols.chat import (
     chat_protocol_spec,
 )
 from pyswip import Prolog
-import motto  # from metta-motto
 
 os.environ['BLOCKSCOUT_DISABLE_COMMUNITY_TELEMETRY'] = 'true'
 
@@ -67,14 +66,14 @@ def send_discord_alert(message):
     except Exception as e:
         return f"Error sending Discord alert: {e}"
 
-# Use metta-motto to enhance prompt with MeTTa-WAM reasoning
+# Enhance prompt with MeTTa-WAM reasoning (using direct prolog.query)
 def enhance_with_metta(query):
     try:
-        motto_agent = motto.Motto(prolog)  # Adapt if needed
-        reasoned = motto_agent.chain(query, model=client, prompt_template="Reason about {query} using knowledge graph: include impacts")
-        return reasoned
+        reasoning = list(prolog.query("anomaly(A, T, I, M)"))  # Query for anomalies
+        reasoned_str = json.dumps(reasoning)
+        return f"{query} with reasoning: {reasoned_str}"
     except Exception as e:
-        return f"MeTTa-WAM error: {e}"
+        return f"MeTTa-WAM error: {e}. {query}"
 
 @agent.on_interval(period=300)  # Poll every 5 minutes
 async def monitor_diamond(ctx: Context):
@@ -110,7 +109,7 @@ async def monitor_diamond(ctx: Context):
         
         # MeTTa-WAM inference
         try:
-            inference = list(prolog.query('match(self, anomaly(A, T, I, M), (A, T, I, M))'))
+            inference = list(prolog.query('anomaly(A, T, I, M)'))
             ctx.logger.info(f"MeTTa-WAM inference: {inference}")
         except Exception as e:
             inference = []
