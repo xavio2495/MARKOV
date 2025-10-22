@@ -1,4 +1,5 @@
 import chalk from "chalk";
+import gradient from "gradient-string";
 
 /**
  * Display the Markov splash screen
@@ -12,13 +13,17 @@ export function displaySplashScreen(): void {
      \\/_/  \\/_/   \\/_/\\/_/   \\/_/ /_/   \\/_/\\/_/   \\/_____/   \\/_/   
 `;
 
-  console.log(chalk.cyan(logo));
-  console.log(chalk.bold.white("                    WEB3 Version Control System"));
+  console.log(gradient(["#e43535", "#4C67D0"]).multiline(logo));
+  console.log(
+    gradient(["#e43535", "#4C67D0"])(
+      "                    WEB3 Version Control System",
+    ),
+  );
   console.log("");
-  console.log(chalk.gray("Version:"));
-  console.log(chalk.white("    1.0.0 (Released 25 October, 2025)"));
+  console.log(chalk.blue("Version:"));
+  console.log(chalk.green("    1.0.0 (Released 25 October, 2025)"));
   console.log("");
-  console.log(chalk.gray("Description:"));
+  console.log(chalk.blue("Description:"));
   console.log(
     chalk.white(
       "    - CLI tool/Hardhat plugin with extensive features for version control of Smart Contracts through ERC-2535.",
@@ -30,37 +35,39 @@ export function displaySplashScreen(): void {
     ),
   );
   console.log(
-    chalk.white("    - AI powered Smart Contract auditing and gas optimization."),
+    chalk.white(
+      "    - AI powered Smart Contract auditing and gas optimization.",
+    ),
   );
   console.log(chalk.white("    - AI powered Smart Contract simulation."));
   console.log(
-    chalk.white(
-      "    - Smart Contract Monitoring tool (CLI, Discord Webhook).",
-    ),
+    chalk.white("    - Smart Contract Monitoring tool (CLI, Discord Webhook)."),
   );
   console.log("");
-  console.log(chalk.gray("Dependencies:"));
+  console.log(chalk.blue("Dependencies:"));
   console.log(chalk.white("    - Hardhat 3.x (Core framework)"));
   console.log(chalk.white("    - viem (Contract interactions)"));
   console.log(chalk.white("    - fs-extra, crypto, inquirer (utilities)"));
   console.log(
-    chalk.white("    - @modelcontextprotocol/typescript-sdk (MCP for monitoring)"),
+    chalk.white(
+      "    - @modelcontextprotocol/typescript-sdk (MCP for monitoring)",
+    ),
   );
   console.log("");
   console.log(chalk.yellow("Warnings:"));
   console.log(
-    chalk.yellow(
+    chalk.white(
       "    - Always simulate (--simulate flag) before mainnet deploys to avoid gas waste or exploits.",
     ),
   );
   console.log(
-    chalk.yellow("    - Monitoring requires API keys (markov api --setup)."),
+    chalk.white("    - Monitoring requires API keys (markov api --setup)."),
   );
   console.log(
-    chalk.yellow("    - Use markov optimize for gas savings on Diamond cuts."),
+    chalk.white("    - Use markov optimize for gas savings on Diamond cuts."),
   );
   console.log("");
-  console.log(chalk.gray("Resources:"));
+  console.log(chalk.blue("Resources:"));
   console.log(
     chalk.white(
       "    - Docs: https://charles1246.github.com/markov-docs (setup, tutorials)",
@@ -83,11 +90,11 @@ export function displaySplashScreen(): void {
     ),
   );
   console.log("");
-  console.log(chalk.gray("Built by:"));
+  console.log(chalk.blue("Built by:"));
   console.log(chalk.white("    - xavio2495"));
   console.log(chalk.white("    - charlesms1246"));
   console.log("");
-  console.log(chalk.gray("License:"));
+  console.log(chalk.blue("License:"));
   console.log(chalk.white("    GPL 3.0"));
   console.log(chalk.white("    (Open Source Contributions are welcome)"));
   console.log("");
@@ -100,10 +107,8 @@ export function displaySplashScreen(): void {
  */
 export function displayCompactSplash(): void {
   console.log(
-    chalk.cyan.bold(
-      "MARKOV",
-    ) +
-      chalk.gray(" v1.0.0") +
+    chalk.cyan.bold("MARKOV") +
+      chalk.blue(" v1.0.0") +
       chalk.dim(" | WEB3 Version Control System"),
   );
 }

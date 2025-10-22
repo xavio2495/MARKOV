@@ -22,8 +22,20 @@ const plugin: HardhatPlugin = {
       .setAction(() => import("./tasks/my-task.js"))
       .build(),
 
-    // Main markov task dispatcher (arguments parsed inside dispatcher)
+    // Main markov task dispatcher with optional command and variadic args
     task("markov", "Git-like versioning for ERC-2535 Diamond contracts")
+      .addPositionalArgument({
+        name: "command",
+        description: "Markov command to execute (config, init, deploy, log, status, etc.)",
+        type: ArgumentType.STRING,
+        defaultValue: "",
+      })
+      .addVariadicArgument({
+        name: "args",
+        description: "Additional arguments for the command",
+        type: ArgumentType.STRING,
+        defaultValue: [],
+      })
       .setAction(() => import("./tasks/markov/dispatcher.js"))
       .build(),
 

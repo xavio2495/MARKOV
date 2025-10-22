@@ -19,13 +19,17 @@ export default async function markovDispatcher(
     splashShown = true;
   }
 
-  // Parse command from process.argv since Hardhat 3 doesn't support variadic positional args
-  const rawArgs = process.argv.slice(3); // Skip node, script, and 'markov'
-  const command = rawArgs[0];
-  const args = rawArgs.slice(1);
+  // Get command and args from taskArguments (parsed by Hardhat)
+  const command = taskArguments.command || null;
+  const args = taskArguments.args || [];
+  
+  console.log(`\nExecuting markov command: ${command || 'help'}`);
+  console.log(`With args: ${JSON.stringify(args)}\n`);
 
   // Map of valid commands
   const validCommands = [
+    null,
+    "help",
     "config",
     "init",
     "clone",
@@ -46,14 +50,19 @@ export default async function markovDispatcher(
   ];
 
   if (!validCommands.includes(command)) {
-    console.error(`❌ Unknown command: ${command}`);
-    console.log("\n📋 Available commands:");
+    console.error(` Unknown command: ${command}`);
+    console.log("\n Available commands:");
     validCommands.forEach((cmd) => {
-      console.log(`  - markov ${cmd}`);
+      console.log(`  - markov ${cmd ?? 'help'}`);
     });
     console.log("\nFor help on a specific command, run:");
     console.log("  npx hardhat help markov:<command>");
     throw new Error(`Invalid markov command: ${command}`);
+  }
+
+  // If no command or 'help', show splash and exit
+  if (command === null || command === 'help') {
+    return;
   }
 
   // Construct subtask name
@@ -156,7 +165,11 @@ function parseArgsForCommand(
         parsed.action = args[0];
       }
       break;
-
+      
+    case "help":
+    case null :
+      displaySplashScreen();
+      break;
     case "log":
     case "status":
     case "sync":
