@@ -1,10 +1,12 @@
 import { HardhatUserConfig } from "hardhat/config";
-import myPlugin from "hardhat-my-plugin";
+import markov from "markov-plugin";
 
 export default {
-  plugins: [myPlugin],
+  plugins: [markov],
   solidity: "0.8.29",
-  myConfig: {
-    greeting: "Hola",
-  },
+  // Optional: markov config (defaults provided by plugin)
+  // markov: {
+  //   chain: "localhost",
+  //   author: "Example User",
+  // },
 } satisfies HardhatUserConfig;
