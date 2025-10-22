@@ -12,7 +12,7 @@ from uagents_core.contrib.protocols.chat import (
     TextContent,
     chat_protocol_spec,
 )
-from hyperon import MeTTa
+from pyswip import Prolog
 import motto  # from metta-motto
 
 # ASI:One setup
@@ -25,13 +25,13 @@ client = OpenAI(
 # MCP server URL (hosted or local: 'http://localhost:8000/mcp' if running locally)
 MCP_URL = 'https://mcp.blockscout.com/mcp'
 
-# MeTTa setup for knowledge graph
-metta = MeTTa()
-# Load initial knowledge (example: add vuln rules)
-metta.run('''
-!(add-atom &self (vuln reentrancy (description "External calls before state update") (impact "High: Potential fund loss") (mitigation "Use checks-effects-interactions pattern")))
-!(add-atom &self (opt packing (description "Pack variables to save storage slots") (impact "Medium: Gas savings") (mitigation "Reorder variables by size")))
-''')
+# MeTTa-WAM setup for knowledge graph
+prolog = Prolog()
+# Load MeTTa-WAM module (adjust path to your cloned metta-wam.pl)
+prolog.consult('path/to/metta-wam/metta-wam.pl')  # Replace with actual path
+# Load initial knowledge (example: add vuln rules using Prolog assertz)
+prolog.assertz('(vuln(reentrancy, "External calls before state update", "High: Potential fund loss", "Use checks-effects-interactions pattern"))')
+prolog.assertz('(opt(packing, "Pack variables to save storage slots", "Medium: Gas savings", "Reorder variables by size"))')
 
 # Agent setup with Agentverse registration
 agent = Agent(
@@ -78,14 +78,14 @@ def get_code_from_hardhat(file_path):
     except Exception as e:
         return f"Error: {str(e)}"
 
-# Use metta-motto to enhance prompt with MeTTa reasoning
+# Use metta-motto to enhance prompt with MeTTa-WAM reasoning
 def enhance_with_metta(query):
     try:
-        motto_agent = motto.Motto(metta)
+        motto_agent = motto.Motto(prolog)  # Adapt if needed for Prolog
         reasoned = motto_agent.chain(query, model=client, prompt_template="Reason about {query} using knowledge graph: query for impacts and mitigations")
         return reasoned
     except Exception as e:
-        return f"MeTTa error: {e}"
+        return f"MeTTa-WAM error: {e}"
 
 @protocol.on_message(ChatMessage)
 async def handle_message(ctx: Context, sender: str, msg: ChatMessage):
@@ -123,13 +123,13 @@ async def handle_message(ctx: Context, sender: str, msg: ChatMessage):
         ctx.logger.error(f"Error extracting code: {e}")
         solidity_code = f"Error: {e}"
     
-    # MeTTa reasoning
+    # MeTTa-WAM reasoning
     try:
-        metta_reasoning = metta.run('!(match &self (vuln $v $d $i $m) ($v $d $i $m))')  # Query KG with more details
-        ctx.logger.info(f"MeTTa reasoning: {metta_reasoning}")
+        metta_reasoning = list(prolog.query('match(self, vuln(V, D, I, M), (V, D, I, M))'))  # Query KG with more details
+        ctx.logger.info(f"MeTTa-WAM reasoning: {metta_reasoning}")
     except Exception as e:
         metta_reasoning = []
-        ctx.logger.error(f"MeTTa query failed: {e}")
+        ctx.logger.error(f"MeTTa-WAM query failed: {e}")
     enhanced_prompt = enhance_with_metta(f"Audit: {solidity_code} with reasoning: {metta_reasoning}")
     
     # ASI:One prompt - structured output
@@ -190,9 +190,9 @@ async def handle_task_req(ctx: Context, sender: str, msg: TaskRequest):
             await ctx.send(sender, TaskResult(result=analysis_result, query_id=msg.query_id))
             ctx.logger.info(f"Sent TaskResult for query_id {msg.query_id}")
             
-            # Update MeTTa with new knowledge
-            metta.run(f'!(add-atom &self (audit-result "{analysis_result}"))')
-            ctx.logger.info("Updated MeTTa knowledge")
+            # Update MeTTa-WAM with new knowledge
+            prolog.assertz(f'(audit-result("{analysis_result}"))')
+            ctx.logger.info("Updated MeTTa-WAM knowledge")
         except Exception as e:
             ctx.logger.error(f"Task processing failed: {e}")
 

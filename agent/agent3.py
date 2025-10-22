@@ -12,7 +12,7 @@ from uagents_core.contrib.protocols.chat import (
     TextContent,
     chat_protocol_spec,
 )
-from hyperon import MeTTa
+from pyswip import Prolog
 import motto  # from metta-motto
 
 os.environ['BLOCKSCOUT_DISABLE_COMMUNITY_TELEMETRY'] = 'true'
@@ -28,12 +28,11 @@ DISCORD_WEBHOOK = '<YOUR_DISCORD_WEBHOOK_URL>'  # Replace
 DIAMOND_ADDR = '0xFe89...'  # Replace with actual Diamond contract address
 CHAIN_ID = '1'  # e.g., Ethereum mainnet
 
-# MeTTa setup
-metta = MeTTa()
-metta.run('''
-!(add-atom &self (anomaly high-gas (threshold 1000000) (impact "High: Potential denial of service") (mitigation "Optimize contract")))
-!(add-atom &self (anomaly unusual-event (description "Unexpected event emission") (impact "Medium: Possible exploit")))
-''')
+# MeTTa-WAM setup
+prolog = Prolog()
+prolog.consult('path/to/metta-wam/metta-wam.pl')  # Replace with actual path
+prolog.assertz('(anomaly(high_gas, 1000000, "High: Potential denial of service", "Optimize contract"))')
+prolog.assertz('(anomaly(unusual_event, "Unexpected event emission", "Medium: Possible exploit", ""))')
 
 # Agent setup
 agent = Agent(
@@ -68,14 +67,14 @@ def send_discord_alert(message):
     except Exception as e:
         return f"Error sending Discord alert: {e}"
 
-# Use metta-motto to enhance prompt with MeTTa reasoning
+# Use metta-motto to enhance prompt with MeTTa-WAM reasoning
 def enhance_with_metta(query):
     try:
-        motto_agent = motto.Motto(metta)
+        motto_agent = motto.Motto(prolog)  # Adapt if needed
         reasoned = motto_agent.chain(query, model=client, prompt_template="Reason about {query} using knowledge graph: include impacts")
         return reasoned
     except Exception as e:
-        return f"MeTTa error: {e}"
+        return f"MeTTa-WAM error: {e}"
 
 @agent.on_interval(period=300)  # Poll every 5 minutes
 async def monitor_diamond(ctx: Context):
@@ -109,13 +108,13 @@ async def monitor_diamond(ctx: Context):
         
         summary = json.dumps(summary_data)
         
-        # MeTTa inference
+        # MeTTa-WAM inference
         try:
-            inference = metta.run('!(match &self (anomaly $a $t $i $m) ($a $t $i $m))')
-            ctx.logger.info(f"MeTTa inference: {inference}")
+            inference = list(prolog.query('match(self, anomaly(A, T, I, M), (A, T, I, M))'))
+            ctx.logger.info(f"MeTTa-WAM inference: {inference}")
         except Exception as e:
             inference = []
-            ctx.logger.error(f"MeTTa query failed: {e}")
+            ctx.logger.error(f"MeTTa-WAM query failed: {e}")
         enhanced_prompt = enhance_with_metta(summary + str(inference))
         
         # ASI:One anomaly detection
@@ -147,9 +146,9 @@ async def monitor_diamond(ctx: Context):
             except Exception as e:
                 ctx.logger.error(f"Failed to send to Coordinator: {e}")
             
-            # Update MeTTa with new anomaly
-            metta.run(f'!(add-atom &self (new-anomaly "{anomaly_text}"))')
-            ctx.logger.info("Updated MeTTa knowledge")
+            # Update MeTTa-WAM with new anomaly
+            prolog.assertz(f'(new_anomaly("{anomaly_text}"))')
+            ctx.logger.info("Updated MeTTa-WAM knowledge")
     except Exception as e:
         ctx.logger.exception('Monitoring error')
 
@@ -186,7 +185,7 @@ async def handle_message(ctx: Context, sender: str, msg: ChatMessage):
         
         data = json.dumps({"logs": logs, "summary": tx_summary})
         
-        # Enhance with MeTTa
+        # Enhance with MeTTa-WAM
         enhanced_prompt = enhance_with_metta(data)
         
         r = client.chat.completions.create(

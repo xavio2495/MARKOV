@@ -10,7 +10,7 @@ from uagents_core.contrib.protocols.chat import (
     TextContent,
     chat_protocol_spec,
 )
-from hyperon import MeTTa
+from pyswip import Prolog
 import motto  # from metta-motto
 
 # ASI:One setup
@@ -20,14 +20,13 @@ client = OpenAI(
     api_key=ASI_API_KEY,
 )
 
-# MeTTa setup for query routing and reasoning
-metta = MeTTa()
-metta.run('''
-!(add-atom &self (route analysis (keywords "audit" "vuln" "optimize")))
-!(add-atom &self (route simulation (keywords "simulate" "fork" "tx" "exploit")))
-!(add-atom &self (route monitoring (keywords "monitor" "logs" "anomaly")))
-!(add-atom &self (route all (keywords "full workflow")))
-''')
+# MeTTa-WAM setup for query routing and reasoning
+prolog = Prolog()
+prolog.consult('path/to/metta-wam/metta-wam.pl')  # Replace with actual path
+prolog.assertz('(route(analysis, "audit vuln optimize"))')
+prolog.assertz('(route(simulation, "simulate fork tx exploit"))')
+prolog.assertz('(route(monitoring, "monitor logs anomaly"))')
+prolog.assertz('(route(all, "full workflow"))')
 
 # Agent setup
 agent = Agent(
@@ -51,14 +50,14 @@ async def startup(ctx: Context):
     # Initialize storage
     ctx.storage.set("aggregated", {})
 
-# Use metta-motto to enhance routing with MeTTa
+# Use metta-motto to enhance routing with MeTTa-WAM
 def enhance_with_metta(query):
     try:
-        motto_agent = motto.Motto(metta)
+        motto_agent = motto.Motto(prolog)  # Adapt if needed
         reasoned = motto_agent.chain(query, model=client, prompt_template="Classify and route query {query} using knowledge graph")
         return reasoned
     except Exception as e:
-        return f"MeTTa error: {e}"
+        return f"MeTTa-WAM error: {e}"
 
 # Models for inter-agent communication
 class TaskRequest(Model):
@@ -85,7 +84,7 @@ async def handle_user_query(ctx: Context, sender: str, msg: ChatMessage):
     
     ctx.logger.info(f"Received user query: {text}")
     
-    # Use MeTTa to classify and route
+    # Use MeTTa-WAM to classify and route
     try:
         routing = enhance_with_metta(text)
         ctx.logger.info(f"Routing decision: {routing}")
@@ -171,12 +170,12 @@ async def handle_task_result(ctx: Context, sender: str, msg: TaskResult):
             except Exception as e:
                 ctx.logger.error(f"Failed to send summary: {e}")
         
-        # Update shared MeTTa knowledge
+        # Update shared MeTTa-WAM knowledge
         try:
-            metta.run(f'!(add-atom &self (query-result "{summary}"))')
-            ctx.logger.info("Updated MeTTa knowledge")
+            prolog.assertz(f'(query_result("{summary}"))')
+            ctx.logger.info("Updated MeTTa-WAM knowledge")
         except Exception as e:
-            ctx.logger.error(f"MeTTa update failed: {e}")
+            ctx.logger.error(f"MeTTa-WAM update failed: {e}")
         
         # Clean up storage
         ctx.storage.delete(aggregated_key)

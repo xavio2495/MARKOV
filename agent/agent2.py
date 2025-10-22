@@ -13,7 +13,7 @@ from uagents_core.contrib.protocols.chat import (
     TextContent,
     chat_protocol_spec,
 )
-from hyperon import MeTTa
+from pyswip import Prolog
 import motto  # from metta-motto
 
 ASI_API_KEY = '<YOUR_ASI_ONE_API_KEY>'
@@ -22,12 +22,11 @@ client = OpenAI(
     api_key=ASI_API_KEY,
 )
 
-# MeTTa setup
-metta = MeTTa()
-metta.run('''
-!(add-atom &self (edge-case high-gas (description "Tx exceeding block limit") (impact "High: Tx failure") (mitigation "Optimize loops and storage")))
-!(add-atom &self (edge-case reentrancy-exploit (description "Simulate reentrant call") (poc "Deploy attacker contract and call")))
-''')
+# MeTTa-WAM setup
+prolog = Prolog()
+prolog.consult('path/to/metta-wam/metta-wam.pl')  # Replace with actual path
+prolog.assertz('(edge_case(high_gas, "Tx exceeding block limit", "High: Tx failure", "Optimize loops and storage"))')
+prolog.assertz('(edge_case(reentrancy_exploit, "Simulate reentrant call", "", "Deploy attacker contract and call"))')
 
 # Agent setup
 agent = Agent(
@@ -77,14 +76,14 @@ def generate_gas_chart(gas_data):
     except Exception as e:
         return f'Error generating chart: {e}'
 
-# Use metta-motto to enhance prompt with MeTTa reasoning
+# Use metta-motto to enhance prompt with MeTTa-WAM reasoning
 def enhance_with_metta(query):
     try:
-        motto_agent = motto.Motto(metta)
+        motto_agent = motto.Motto(prolog)  # Adapt if needed
         reasoned = motto_agent.chain(query, model=client, prompt_template="Reason about {query} using knowledge graph: include POC if applicable")
         return reasoned
     except Exception as e:
-        return f"MeTTa error: {e}"
+        return f"MeTTa-WAM error: {e}"
 
 @protocol.on_message(ChatMessage)
 async def handle_message(ctx: Context, sender: str, msg: ChatMessage):
@@ -106,13 +105,13 @@ async def handle_message(ctx: Context, sender: str, msg: ChatMessage):
     ctx.logger.info(f"Simulation output: {sim_output}")
     chart_msg = generate_gas_chart(gas_usage)
     
-    # MeTTa enhancement
+    # MeTTa-WAM enhancement
     try:
-        metta_reasoning = metta.run('!(match &self (edge-case $e $d $i $m) ($e $d $i $m))')
-        ctx.logger.info(f"MeTTa reasoning: {metta_reasoning}")
+        metta_reasoning = list(prolog.query('match(self, edge_case(E, D, I, M), (E, D, I, M))'))
+        ctx.logger.info(f"MeTTa-WAM reasoning: {metta_reasoning}")
     except Exception as e:
         metta_reasoning = []
-        ctx.logger.error(f"MeTTa query failed: {e}")
+        ctx.logger.error(f"MeTTa-WAM query failed: {e}")
     enhanced_prompt = enhance_with_metta(f"Output: {sim_output}\nGas: {gas_usage}\nReasoning: {metta_reasoning}")
     
     # ASI:One analysis
@@ -174,9 +173,9 @@ async def handle_task_req(ctx: Context, sender: str, msg: TaskRequest):
             await ctx.send(sender, TaskResult(result=sim_result, query_id=msg.query_id))
             ctx.logger.info(f"Sent TaskResult for query_id {msg.query_id}")
             
-            # Update MeTTa
-            metta.run(f'!(add-atom &self (sim-result "{sim_result}"))')
-            ctx.logger.info("Updated MeTTa knowledge")
+            # Update MeTTa-WAM
+            prolog.assertz(f'(sim_result("{sim_result}"))')
+            ctx.logger.info("Updated MeTTa-WAM knowledge")
         except Exception as e:
             ctx.logger.error(f"Task processing failed: {e}")
 
