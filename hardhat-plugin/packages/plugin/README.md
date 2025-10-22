@@ -1,55 +1,89 @@
-# `hardhat-my-plugin`
+# `hardhat-markov`
 
-This is an example plugin that adds a task that prints a greeting.
+Git-like versioning system for ERC-2535 Diamond contracts with AI-powered analysis and monitoring.
 
 ## Installation
 
 To install this plugin, run the following command:
 
 ```bash
-npm install --save-dev hardhat-my-plugin
+npm install --save-dev hardhat-markov
 ```
 
 In your `hardhat.config.ts` file, import the plugin and add it to the `plugins` array:
 
 ```ts
-import myPlugin from "hardhat-my-plugin";
+import markov from "hardhat-markov";
 
 export default {
-  plugins: [myPlugin],
+  plugins: [markov],
+  markov: {
+    chain: "localhost",
+    wallet: "0x...",
+    author: "Your Name",
+    gasPrice: "auto",
+    aiApiKey: process.env.OPENAI_API_KEY,
+    mcpEndpoint: "https://mcp.blockscout.com/mcp",
+    autoSync: true,
+  },
 };
 ```
+
+## Splash Screen
+
+The Markov CLI displays a branded splash screen on first invocation:
+
+```
+┌────────────────────────────────────────────────────────────────────────────┐
+│                                                                            │
+│  ███╗   ███╗ █████╗ ██████╗ ██╗  ██╗ ██████╗ ██╗   ██╗                   │
+│  ████╗ ████║██╔══██╗██╔══██╗██║ ██╔╝██╔═══██╗██║   ██║                   │
+│  ██╔████╔██║███████║██████╔╝█████╔╝ ██║   ██║██║   ██║                   │
+│  ██║╚██╔╝██║██╔══██║██╔══██╗██╔═██╗ ██║   ██║╚██╗ ██╔╝                   │
+│  ██║ ╚═╝ ██║██║  ██║██║  ██║██║  ██╗╚██████╔╝ ╚████╔╝                    │
+│  ╚═╝     ╚═╝╚═╝  ╚═╝╚═╝  ╚═╝╚═╝  ╚═╝ ╚═════╝   ╚═══╝                     │
+│                                                                            │
+│                    Version 1.0.0 | EIP-2535 Edition                        │
+│                                                                            │
+└────────────────────────────────────────────────────────────────────────────┘
+```
+
+To suppress the splash screen, set the `MARKOV_NO_SPLASH` environment variable.
 
 ## Usage
 
-The plugin adds a new task called `my-task`. To run it, use the this command:
+The Markov CLI provides Git-like commands for Diamond contract versioning:
 
 ```bash
-npx hardhat my-task
+# Initialize a new Diamond project
+npx hardhat markov init
+
+# Deploy a facet and record the change
+npx hardhat markov deploy <facet-name>
+
+# View version history
+npx hardhat markov log
+
+# Check current Diamond status
+npx hardhat markov status
+
+# Create a new branch
+npx hardhat markov branch <branch-name>
+
+# Merge branches
+npx hardhat markov merge <source-branch>
 ```
 
-You should see the following output:
-
-```
-Hello, Hardhat!
-```
+For complete CLI documentation with all 17 commands, see [MARKOV-CLI.md](./MARKOV-CLI.md).
 
 ### Configuration
 
-You can configure the greeting that's printed by using the `myConfig` field in your Hardhat config. For example, you can have this config:
+The plugin uses the `markov` field in your Hardhat config:
 
-```ts
-import myPlugin from "hardhat-my-plugin";
-
-export default {
-  plugins: [myPlugin],
-  myConfig: {
-    greeting: "Hola",
-  },
-  //...
-};
-```
-
-### Network logs
-
-This plugin also adds some example code to log different network events. To see it in action, all you need to do is run your Hardhat tests, deployment, or a script.
+- `chain`: Target blockchain (default: "localhost")
+- `wallet`: Deployment wallet address
+- `author`: Commit author name (default: "Anonymous")
+- `gasPrice`: Gas pricing strategy (default: "auto")
+- `aiApiKey`: OpenAI API key for AI features
+- `mcpEndpoint`: Model Context Protocol endpoint (default: "https://mcp.blockscout.com/mcp")
+- `autoSync`: Auto-sync with on-chain events (default: true)

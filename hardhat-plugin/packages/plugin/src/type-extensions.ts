@@ -1,13 +1,20 @@
-import { MyPluginConfig, MyPluginUserConfig } from "./types.js";
+import {
+  MyPluginConfig,
+  MyPluginUserConfig,
+  MarkovConfig,
+  MarkovUserConfig,
+} from "./types.js";
 
 import "hardhat/types/config";
 declare module "hardhat/types/config" {
   interface HardhatUserConfig {
     myConfig?: MyPluginUserConfig;
+    markov?: MarkovUserConfig;
   }
 
   interface HardhatConfig {
     myConfig: MyPluginConfig;
+    markov: MarkovConfig;
   }
 }
 

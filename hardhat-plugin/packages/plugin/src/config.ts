@@ -14,34 +14,95 @@ import { HardhatUserConfigValidationError } from "hardhat/types/hooks";
 export async function validatePluginConfig(
   userConfig: HardhatUserConfig,
 ): Promise<HardhatUserConfigValidationError[]> {
-  if (userConfig.myConfig === undefined) {
-    return [];
-  }
+  const errors: HardhatUserConfigValidationError[] = [];
 
-  if (typeof userConfig.myConfig !== "object") {
-    return [
-      {
+  // Validate legacy myConfig
+  if (userConfig.myConfig !== undefined) {
+    if (typeof userConfig.myConfig !== "object") {
+      errors.push({
         path: ["myConfig"],
         message: "Expected an object with an optional greeting.",
-      },
+      });
+    } else {
+      const greeting = userConfig.myConfig?.greeting;
+      if (greeting !== undefined) {
+        if (typeof greeting !== "string" || greeting.length === 0) {
+          errors.push({
+            path: ["myConfig", "greeting"],
+            message: "Expected a non-empty string.",
+          });
+        }
+      }
+    }
+  }
+
+  // Validate markov config
+  if (userConfig.markov !== undefined) {
+    if (typeof userConfig.markov !== "object") {
+      errors.push({
+        path: ["markov"],
+        message: "Expected an object with markov configuration.",
+      });
+      return errors;
+    }
+
+    const markov = userConfig.markov;
+
+    // Validate optional string fields
+    const stringFields = [
+      "chain",
+      "wallet",
+      "author",
+      "aiApiKey",
+      "aiModel",
+      "governanceAddress",
+      "mcpEndpoint",
+      "agentverseApiToken",
+      "historyPath",
     ];
+
+    for (const field of stringFields) {
+      const value = markov[field as keyof typeof markov];
+      if (value !== undefined && typeof value !== "string") {
+        errors.push({
+          path: ["markov", field],
+          message: `Expected a string.`,
+        });
+      }
+    }
+
+    // Validate gasPrice (can be string or number)
+    if (
+      markov.gasPrice !== undefined &&
+      typeof markov.gasPrice !== "string" &&
+      typeof markov.gasPrice !== "number"
+    ) {
+      errors.push({
+        path: ["markov", "gasPrice"],
+        message: "Expected a string or number.",
+      });
+    }
+
+    // Validate boolean fields
+    if (markov.verbose !== undefined && typeof markov.verbose !== "boolean") {
+      errors.push({
+        path: ["markov", "verbose"],
+        message: "Expected a boolean.",
+      });
+    }
+
+    if (
+      markov.autoSync !== undefined &&
+      typeof markov.autoSync !== "boolean"
+    ) {
+      errors.push({
+        path: ["markov", "autoSync"],
+        message: "Expected a boolean.",
+      });
+    }
   }
 
-  const greeting = userConfig.myConfig?.greeting;
-  if (greeting === undefined) {
-    return [];
-  }
-
-  if (typeof greeting !== "string" || greeting.length === 0) {
-    return [
-      {
-        path: ["myConfig", "greeting"],
-        message: "Expected a non-empty string.",
-      },
-    ];
-  }
-
-  return [];
+  return errors;
 }
 
 /**
@@ -59,11 +120,30 @@ export async function resolvePluginConfig(
   userConfig: HardhatUserConfig,
   partiallyResolvedConfig: HardhatConfig,
 ): Promise<HardhatConfig> {
+  // Resolve legacy myConfig
   const greeting = userConfig.myConfig?.greeting ?? "Hello";
   const myConfig = { greeting };
+
+  // Resolve markov config with defaults
+  const markov = {
+    chain: userConfig.markov?.chain ?? "localhost",
+    wallet: userConfig.markov?.wallet ?? "",
+    gasPrice: userConfig.markov?.gasPrice ?? "auto",
+    author: userConfig.markov?.author ?? "Anonymous",
+    aiApiKey: userConfig.markov?.aiApiKey,
+    aiModel: userConfig.markov?.aiModel ?? "gpt-4",
+    governanceAddress: userConfig.markov?.governanceAddress,
+    mcpEndpoint:
+      userConfig.markov?.mcpEndpoint ?? "https://mcp.blockscout.com/mcp",
+    agentverseApiToken: userConfig.markov?.agentverseApiToken,
+    historyPath: userConfig.markov?.historyPath ?? ".markov/history.json",
+    verbose: userConfig.markov?.verbose ?? false,
+    autoSync: userConfig.markov?.autoSync ?? true,
+  };
 
   return {
     ...partiallyResolvedConfig,
     myConfig,
+    markov,
   };
 }
