@@ -67,11 +67,11 @@ export default async function helpTask(
     },
     {
       name: "config",
-      usage: "markov config [--set <key> <value>] [--get <key>] [--list]",
-      description: "Configure Markov settings",
+      usage: "markov config [--set] [--get <key>] [--list]",
+      description: "Configure Markov settings: set EVM chain, wallet address, gas price, and author.\nPersists to .markov/config.json and mirrors changes into hardhat.config.ts.\nUse --set for interactive key/value prompts.",
       args: [],
       options: [
-        { name: "--set <key> <value>", desc: "Set a configuration value" },
+        { name: "--set", desc: "Set a configuration value (interactive prompt for key and value)" },
         { name: "--get <key>", desc: "Get a configuration value" },
         { name: "--list", desc: "List all configuration values" },
       ],

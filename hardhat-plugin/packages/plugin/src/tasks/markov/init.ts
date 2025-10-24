@@ -33,8 +33,8 @@ export default async function markovInit(
   console.log(chalk.blue("║") + chalk.cyan.bold("              Initializing MARKOV Diamond Project                   ") + chalk.blue("║"));
   console.log(chalk.blue("╚════════════════════════════════════════════════════════════════════╝\n"));
   
-  console.log(chalk.yellow("💎 Diamond Name:"), chalk.white(diamondName));
-  console.log(chalk.yellow("📁 Project Root:"), chalk.white(hre.config.paths.root));
+  console.log(chalk.yellow("Diamond Name:"), chalk.white(diamondName));
+  console.log(chalk.yellow("Project Root:"), chalk.white(hre.config.paths.root));
   console.log();
 
   try {
@@ -42,7 +42,7 @@ export default async function markovInit(
     const alreadyInitialized = await checkIfInitialized(hre.config.paths.root);
     
     if (alreadyInitialized && !args.force) {
-      console.log(chalk.yellow("⚠️  Warning: MARKOV project already initialized!\n"));
+      console.log(chalk.yellow("Warning: MARKOV project already initialized!\n"));
       console.log(chalk.gray("   Found existing:"));
       if (alreadyInitialized.markov) {
         console.log(chalk.gray("   ✓ .markov/ directory"));
@@ -57,13 +57,13 @@ export default async function markovInit(
       );
       
       if (!shouldContinue) {
-        console.log(chalk.blue("\n✋ Initialization cancelled.\n"));
-        console.log(chalk.cyan("💡 To force reinitialization, use:"), chalk.green("npx hardhat markov init --force"));
+        console.log(chalk.blue("\nInitialization cancelled.\n"));
+        console.log(chalk.cyan("To force reinitialization, use:"), chalk.green("npx hardhat markov init --force"));
         console.log();
         return;
       }
       
-      console.log(chalk.yellow("\n⚡ Proceeding with reinitialization...\n"));
+      console.log(chalk.yellow("\nProceeding with reinitialization...\n"));
     }
     
     // Step 1: Create contracts directory structure
@@ -75,8 +75,8 @@ export default async function markovInit(
     // Step 3: Create initial history file
     await createHistoryFile(hre.config.paths.root, diamondName);
     
-    console.log(chalk.green("\n✅ Initialization complete!\n"));
-    console.log(chalk.cyan("📖 Next steps:"));
+    console.log(chalk.green("\nInitialization complete!\n"));
+    console.log(chalk.cyan("Next steps:"));
     console.log(chalk.white("  1. Review the generated Diamond contracts in"), chalk.yellow("contracts/"));
     console.log(chalk.white("  2. Customize your facets in"), chalk.yellow("contracts/facets/"));
     console.log(chalk.white("  3. Deploy your Diamond:"), chalk.green(`npx hardhat markov deploy DiamondCutFacet,DiamondLoupeFacet,OwnershipFacet`));
@@ -84,7 +84,7 @@ export default async function markovInit(
     console.log();
     
   } catch (error) {
-    console.error(chalk.red("\n❌ Initialization failed:"), error instanceof Error ? error.message : error);
+    console.error(chalk.red("\nInitialization failed:"), error instanceof Error ? error.message : error);
     if (hre.config.markov?.verbose) {
       console.error(error);
     }
@@ -145,7 +145,7 @@ async function promptUser(question: string): Promise<boolean> {
  * Create the contracts directory structure with Diamond template
  */
 async function createContractsStructure(rootPath: string, diamondName: string): Promise<void> {
-  console.log(chalk.cyan("📦 Step 1:"), chalk.white("Creating contracts directory structure..."));
+  console.log(chalk.cyan("Step 1:"), chalk.white("Creating contracts directory structure..."));
   
   const contractsPath = path.join(rootPath, "contracts");
   const interfacesPath = path.join(contractsPath, "interfaces");
@@ -325,7 +325,7 @@ contract OwnershipFacet is IERC173 {
  * Create .markov directory for version tracking
  */
 async function createMarkovDirectory(rootPath: string): Promise<void> {
-  console.log(chalk.cyan("📦 Step 2:"), chalk.white("Creating .markov directory..."));
+  console.log(chalk.cyan("Step 2:"), chalk.white("Creating .markov directory..."));
   
   const markovPath = path.join(rootPath, ".markov");
   await fs.mkdir(markovPath, { recursive: true });
@@ -355,7 +355,7 @@ async function createMarkovDirectory(rootPath: string): Promise<void> {
  * Create initial history file
  */
 async function createHistoryFile(rootPath: string, diamondName: string): Promise<void> {
-  console.log(chalk.cyan("📦 Step 3:"), chalk.white("Initializing version history..."));
+  console.log(chalk.cyan("Step 3:"), chalk.white("Initializing version history..."));
   
   const markovPath = path.join(rootPath, ".markov");
   const historyPath = path.join(markovPath, "history.json");

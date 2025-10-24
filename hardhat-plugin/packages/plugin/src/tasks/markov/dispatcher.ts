@@ -1,6 +1,6 @@
 import type { HardhatRuntimeEnvironment } from "hardhat/types/hre";
 import type { TaskArguments } from "hardhat/types/tasks";
-import { displaySplashScreen } from "../../utils/splash.js";
+// import { displaySplashScreen } from "../../utils/splash.js";
 
 // Track if splash has been shown this session
 //let splashShown = false;
@@ -21,7 +21,38 @@ export default async function markovDispatcher(
 
   // Get command and args from taskArguments (parsed by Hardhat)
   const command = taskArguments.command || null;
-  const args = taskArguments.args || [];
+  // Start with positional args parsed by Hardhat
+  const positionalArgs: string[] = Array.isArray((taskArguments as any).args)
+    ? ([...(taskArguments as any).args] as string[])
+    : [];
+  const anyArgs = taskArguments as Record<string, any>;
+  let args: string[] = [...positionalArgs];
+
+  // Merge selected options from taskArguments into args so subtasks receive them
+  if (command === "config") {
+    if (anyArgs.list === true) {
+      args.push("--list");
+    }
+    if (typeof anyArgs.get === "string" && anyArgs.get.length > 0) {
+      args.push("--get", anyArgs.get);
+    }
+    if (typeof anyArgs.set === "string" && anyArgs.set.length > 0) {
+      const v = typeof anyArgs.value === "string" ? anyArgs.value : anyArgs.setValue;
+      if (typeof v === "string" && v.length > 0) {
+        args.push("--set", anyArgs.set, v);
+      }
+    }
+  } else {
+    // Generic merge for boolean/string options (e.g., --force)
+    for (const [k, v] of Object.entries(anyArgs)) {
+      if (k === "command" || k === "args") continue;
+      if (typeof v === "boolean" && v) {
+        args.push(`--${k}`);
+      } else if (typeof v === "string" && v.length > 0) {
+        args.push(`--${k}`, v);
+      }
+    }
+  }
   
   //console.log(`\nExecuting markov command: ${command || 'help'}`);
   //console.log(`With args: ${JSON.stringify(args)}\n`);
@@ -101,9 +132,12 @@ function parseArgsForCommand(
 
   switch (command) {
     case "clone":
-      // markov clone <address> [--network <network>]
+      // markov clone <address> [sourceNetwork]
       if (args.length > 0) {
         parsed.address = args[0];
+      }
+      if (args.length > 1) {
+        parsed.sourceNetwork = args[1];
       }
       break;
 
@@ -188,13 +222,39 @@ function parseArgsForCommand(
   // Parse common flags from args (basic implementation)
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
-    if (arg.startsWith("--")) {
-      const key = arg.slice(2);
-      const value = args[i + 1] && !args[i + 1].startsWith("--") ? args[i + 1] : true;
-      parsed[key] = value;
-      if (value !== true) {
-        i++; // Skip next arg as it's the value
+    if (!arg.startsWith("--")) continue;
+
+    // Special handling for config command which may need two values after --set
+    if (command === "config") {
+      if (arg === "--set") {
+        const key = args[i + 1] && !args[i + 1].startsWith("--") ? args[i + 1] : undefined;
+        const value = args[i + 2] && !args[i + 2].startsWith("--") ? args[i + 2] : undefined;
+        if (key !== undefined && value !== undefined) {
+          (parsed as any).set = key;
+          (parsed as any).setValue = value;
+          i += 2;
+          continue;
+        }
       }
+      if (arg === "--get") {
+        const key = args[i + 1] && !args[i + 1].startsWith("--") ? args[i + 1] : undefined;
+        if (key !== undefined) {
+          (parsed as any).get = key;
+          i += 1;
+          continue;
+        }
+      }
+      if (arg === "--list") {
+        (parsed as any).list = true;
+        continue;
+      }
+    }
+
+    const key = arg.slice(2);
+    const value = args[i + 1] && !args[i + 1].startsWith("--") ? args[i + 1] : true;
+    parsed[key] = value;
+    if (value !== true) {
+      i++; // Skip next arg as it's the value
     }
   }
 

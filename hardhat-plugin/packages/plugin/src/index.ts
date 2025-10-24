@@ -36,6 +36,26 @@ const plugin: HardhatPlugin = {
         type: ArgumentType.STRING,
         defaultValue: [],
       })
+      // Accept common flags/options used by subcommands so the root task
+      // doesn't reject them before dispatching
+      .addFlag({
+        name: "list",
+        description: "List configuration values (used by 'config')",
+      })
+      .addOption({
+        name: "get",
+        description: "Get configuration key (used by 'config')",
+        type: ArgumentType.STRING,
+        defaultValue: "",
+      })
+      .addFlag({
+        name: "set",
+        description: "Set configuration key interactively (used by 'config')",
+      })
+      .addFlag({
+        name: "force",
+        description: "Force action when supported (e.g., init)",
+      })
       .setAction(() => import("./tasks/markov/dispatcher.js"))
       .build(),
 
@@ -45,6 +65,20 @@ const plugin: HardhatPlugin = {
       .build(),
 
     task("markov:config", "Configure Markov settings")
+      .addFlag({
+        name: "list",
+        description: "List configuration values",
+      })     
+      .addOption({
+        name: "get",
+        description: "Get a configuration key",
+        type: ArgumentType.STRING,
+        defaultValue: "",
+      })
+      .addFlag({
+        name: "set",
+        description: "Set a configuration key (interactive prompt for key and value)",
+      })
       .setAction(() => import("./tasks/markov/config.js"))
       .build(),
 
@@ -63,13 +97,13 @@ const plugin: HardhatPlugin = {
       .build(),
 
     task("markov:clone", "Clone an existing Diamond contract")
-      .addOption({
+      .addPositionalArgument({
         name: "address",
         description: "Diamond contract address to clone",
         type: ArgumentType.STRING,
         defaultValue: "",
       })
-      .addOption({
+      .addPositionalArgument({
         name: "sourceNetwork",
         description: "Source network name (avoids conflict with global --network)",
         type: ArgumentType.STRING,

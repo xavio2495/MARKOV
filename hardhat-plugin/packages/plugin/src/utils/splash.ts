@@ -21,7 +21,7 @@ export function displaySplashScreen(): void {
   );
   console.log("");
   console.log(chalk.blue("Version:"));
-  console.log(chalk.green("    1.0.0 (Released 25 October, 2025)"));
+  console.log(chalk.green("    1.0.0 (Released 26 October, 2025)"));
   console.log("");
   console.log(chalk.blue("Description:"));
   console.log(
@@ -122,7 +122,7 @@ export function displayCompactSplash(): void {
   );
   console.log("");
   console.log(chalk.blue("Version:"));
-  console.log(chalk.green("    1.0.0 (Released 25 October, 2025)"));
+  console.log(chalk.green("    1.0.0 (Released 26 October, 2025)"));
   console.log("");
   console.log(chalk.dim("─".repeat(80)));
   console.log("");}
