@@ -1,0 +1,7 @@
+uagents
+openai
+requests
+pyswip
+janus-swi
+metta-motto
+matplotlib
