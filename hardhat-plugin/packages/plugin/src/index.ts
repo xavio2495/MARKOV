@@ -40,6 +40,10 @@ const plugin: HardhatPlugin = {
       .build(),
 
     // Markov tasks for individual commands
+    task("markov:help", "Display help information for markov commands")
+      .setAction(() => import("./tasks/markov/help.js"))
+      .build(),
+
     task("markov:config", "Configure Markov settings")
       .setAction(() => import("./tasks/markov/config.js"))
       .build(),
@@ -50,6 +54,10 @@ const plugin: HardhatPlugin = {
         description: "Name of the Diamond contract",
         type: ArgumentType.STRING,
         defaultValue: "Diamond",
+      })
+      .addFlag({
+        name: "force",
+        description: "Force reinitialization even if project already exists",
       })
       .setAction(() => import("./tasks/markov/init.js"))
       .build(),

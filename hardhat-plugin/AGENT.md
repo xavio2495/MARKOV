@@ -15,7 +15,7 @@ Use viem for all contract interactions, as Hardhat supports it via the `@nomicfo
 
 - **Features (CLI Commands)**:
   1. `markov config`: Sets EVM chain, user wallet address, gas fees, and author details (updates `hardhat.config.ts` or a dedicated config file).
-  2. `markov init`: Creates and deploys a new Diamond contract ERC-2535 structure in the repo.
+  2. `markov init`: Creates a new Diamond contract ERC-2535 structure in the repo and initialises markov versioning through .markov
   3. `markov clone`: Clones a Diamond contract from a source chain using a provided contract ID/address.
   4. `markov log`: Displays logs of contract updates, deployments, and status (from local history and on-chain events).
   5. `markov deploy`: Deploys new/updated facets, executes `diamondCut`, and logs the output.

@@ -3,7 +3,7 @@ import type { TaskArguments } from "hardhat/types/tasks";
 import { displaySplashScreen } from "../../utils/splash.js";
 
 // Track if splash has been shown this session
-let splashShown = false;
+//let splashShown = false;
 
 /**
  * Main dispatcher for markov CLI commands.
@@ -14,17 +14,17 @@ export default async function markovDispatcher(
   hre: HardhatRuntimeEnvironment,
 ) {
   // Display splash screen on first invocation
-  if (!splashShown) {
+/*   if (!splashShown) {
     displaySplashScreen();
     splashShown = true;
-  }
+  } */
 
   // Get command and args from taskArguments (parsed by Hardhat)
   const command = taskArguments.command || null;
   const args = taskArguments.args || [];
   
-  console.log(`\nExecuting markov command: ${command || 'help'}`);
-  console.log(`With args: ${JSON.stringify(args)}\n`);
+  //console.log(`\nExecuting markov command: ${command || 'help'}`);
+  //console.log(`With args: ${JSON.stringify(args)}\n`);
 
   // Map of valid commands
   const validCommands = [
@@ -50,18 +50,22 @@ export default async function markovDispatcher(
   ];
 
   if (!validCommands.includes(command)) {
-    console.error(` Unknown command: ${command}`);
-    console.log("\n Available commands:");
-    validCommands.forEach((cmd) => {
-      console.log(`  - markov ${cmd ?? 'help'}`);
-    });
+    console.error(`Unknown command: ${command}`);
+    console.log("\nAvailable commands:");
+    validCommands
+      .filter(cmd => cmd !== null)
+      .forEach((cmd) => {
+        console.log(`  - markov ${cmd}`);
+      });
+    console.log("\nFor detailed help, run:");
+    console.log("  npx hardhat markov help");
     console.log("\nFor help on a specific command, run:");
     console.log("  npx hardhat help markov:<command>");
     throw new Error(`Invalid markov command: ${command}`);
   }
 
-  // If no command or 'help', show splash and exit
-  if (command === null || command === 'help') {
+  // If no command, show splash and exit
+  if (command === null || command === "") {
     return;
   }
 
@@ -77,7 +81,7 @@ export default async function markovDispatcher(
     await subtask.run(subtaskArgs);
   } catch (error) {
     if (error instanceof Error) {
-      console.error(`❌ Error executing markov ${command}:`, error.message);
+      console.error(`Error executing markov ${command}:`, error.message);
       if (hre.config.markov.verbose) {
         console.error(error.stack);
       }
@@ -167,9 +171,6 @@ function parseArgsForCommand(
       break;
       
     case "help":
-    case null :
-      displaySplashScreen();
-      break;
     case "log":
     case "status":
     case "sync":

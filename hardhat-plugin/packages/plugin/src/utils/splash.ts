@@ -106,9 +106,23 @@ export function displaySplashScreen(): void {
  * Display a compact version of the splash screen
  */
 export function displayCompactSplash(): void {
+ const logo = `
+    __    __     ______     ______     __  __     ______     __   __ 
+   /\\ "-./  \\   /\\  __ \\   /\\  == \\   /\\ \\/ /    /\\  __ \\   /\\ \\ / / 
+   \\ \\ \\-./\\ \\  \\ \\  __ \\  \\ \\  __<   \\ \\  _"-.  \\ \\ \\/\\ \\  \\ \\ \\'/  
+    \\ \\_\\ \\ \\_\\  \\ \\_\\ \\_\\  \\ \\_\\ \\_\\  \\ \\_\\ \\_\\  \\ \\_____\\  \\ \\__|  
+     \\/_/  \\/_/   \\/_/\\/_/   \\/_/ /_/   \\/_/\\/_/   \\/_____/   \\/_/   
+`;
+
+  console.log(gradient(["#e43535", "#4C67D0"]).multiline(logo));
   console.log(
-    chalk.cyan.bold("MARKOV") +
-      chalk.blue(" v1.0.0") +
-      chalk.dim(" | WEB3 Version Control System"),
+    gradient(["#e43535", "#4C67D0"])(
+      "                    WEB3 Version Control System",
+    ),
   );
-}
+  console.log("");
+  console.log(chalk.blue("Version:"));
+  console.log(chalk.green("    1.0.0 (Released 25 October, 2025)"));
+  console.log("");
+  console.log(chalk.dim("─".repeat(80)));
+  console.log("");}
