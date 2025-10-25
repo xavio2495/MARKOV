@@ -56,6 +56,12 @@ const plugin: HardhatPlugin = {
         name: "force",
         description: "Force action when supported (e.g., init)",
       })
+      .addOption({
+        name: "chain",
+        description: "Blockchain network (used by 'stats')",
+        type: ArgumentType.STRING,
+        defaultValue: "",
+      })
       .setAction(() => import("./tasks/markov/dispatcher.js"))
       .build(),
 
@@ -275,6 +281,18 @@ const plugin: HardhatPlugin = {
       .build(),
 
     task("markov:stats", "Display analytics and statistics")
+      .addPositionalArgument({
+        name: "address",
+        description: "Contract address to analyze",
+        type: ArgumentType.STRING,
+        defaultValue: "",
+      })
+      .addOption({
+        name: "chain",
+        description: "Blockchain network (name, ID, or symbol)",
+        type: ArgumentType.STRING,
+        defaultValue: "",
+      })
       .addOption({
         name: "format",
         description: "Output format (table, json)",

@@ -1,6 +1,6 @@
 import type { HardhatRuntimeEnvironment } from "hardhat/types/hre";
 import type { TaskArguments } from "hardhat/types/tasks";
-// import { displaySplashScreen } from "../../utils/splash.js";
+import { displaySplashScreen } from "../../utils/splash.js";
 
 // Track if splash has been shown this session
 //let splashShown = false;
@@ -97,6 +97,7 @@ export default async function markovDispatcher(
 
   // If no command, show splash and exit
   if (command === null || command === "") {
+    displaySplashScreen();
     return;
   }
 
@@ -106,6 +107,39 @@ export default async function markovDispatcher(
   try {
     // Parse args for the subtask based on command
     const subtaskArgs = parseArgsForCommand(command, args);
+
+    // If this is the stats command and required inputs are missing, prompt the user
+    if (command === "stats") {
+      const sa = subtaskArgs as Record<string, any>;
+      const readline = await import("readline");
+
+      // Prompt for address if missing
+      if (!sa.address || String(sa.address).trim() === "") {
+        sa.address = await new Promise<string>((resolve) => {
+          const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+          rl.question("Contract address: ", (answer: string) => {
+            rl.close();
+            resolve(answer.trim());
+          });
+        });
+
+        if (!sa.address) {
+          throw new Error("Contract address is required for 'markov stats'");
+        }
+      }
+
+      // Prompt for chain if missing (allow empty to keep default)
+      if (!sa.chain || String(sa.chain).trim() === "") {
+        const chainAnswer = await new Promise<string>((resolve) => {
+          const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+          rl.question("Chain (name or id) [leave empty for default]: ", (answer: string) => {
+            rl.close();
+            resolve(answer.trim());
+          });
+        });
+        if (chainAnswer) sa.chain = chainAnswer;
+      }
+    }
 
     // Get the subtask and run it
     const subtask = hre.tasks.getTask(subtaskName);
@@ -197,10 +231,14 @@ function parseArgsForCommand(
       }
       break;
 
-    case "agent":
-      // markov agent <action>
+    case "stats":
+      // markov stats <address> [--chain <network>] [--format <table|json>]
       if (args.length > 0) {
-        parsed.action = args[0];
+        parsed.address = args[0];
+      }
+      if (args.length > 1) {
+        // support second positional arg as chain (same as clone supports sourceNetwork)
+        parsed.chain = args[1];
       }
       break;
       

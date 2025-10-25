@@ -61,6 +61,20 @@ export class BlockscoutClient {
       Boolean(data.source_code) ||
       false;
 
+    // Try to get transaction counts from REST API if MCP doesn't provide them
+    let txCount = data.tx_count || data.transactions_count || 0;
+    let tokenTransfersCount = data.token_transfers_count || data.transfer_count || 0;
+    
+    if (txCount === 0 && tokenTransfersCount === 0) {
+      try {
+        const restApiCounts = await this.getAddressTransactionCounts(address);
+        txCount = restApiCounts.txCount;
+        tokenTransfersCount = restApiCounts.transferCount;
+      } catch (e) {
+        // Silently fail and use 0 defaults
+      }
+    }
+
     return {
       address: data.hash || data.address || address,
       isContract,
@@ -70,7 +84,131 @@ export class BlockscoutClient {
       creationTxHash: data.creation_transaction_hash || data.creation_tx_hash || data.creationTxHash,
       isVerified,
       name: data.name || data.contract_name,
+      tx_count: txCount,
+      token_transfers_count: tokenTransfersCount,
+      transactions_count: txCount,
     };
+  }
+
+  /**
+   * Get detailed information about a specific transaction by hash
+   * Uses REST API: /api/v2/transactions/{hash}
+   * Returns: timestamp, gas_used, gas_price, gas_limit, transaction_fee
+   */
+  async getTransactionByHash(txHash: string): Promise<any> {
+    try {
+      if (!txHash) {
+        return null;
+      }
+
+      // Use direct_api_call to query Blockscout REST API v2 transactions endpoint
+      // This endpoint provides comprehensive transaction details including:
+      // - timestamp: block timestamp in Unix seconds
+      // - gas_used: actual gas consumed
+      // - gas_price: gas price in Wei
+      // - gas_limit: transaction gas limit
+      // - result: transaction status
+      const response = await this.callApi("direct_api_call", {
+        chain_id: this.chainId,
+        endpoint_path: `/api/v2/transactions/${txHash}`,
+      });
+
+      const debug = process.env.DEBUG_BLOCKSCOUT === "true";
+      
+      // Extract the response data
+      let data = response;
+      if (response.data && typeof response.data === "object") {
+        data = response.data;
+      }
+
+      if (debug) {
+        console.log("[DEBUG] REST API /transactions response:", JSON.stringify(data, null, 2).substring(0, 1000));
+      }
+
+      return data;
+    } catch (error) {
+      const debug = process.env.DEBUG_BLOCKSCOUT === "true";
+      if (debug) {
+        console.log(`[DEBUG] Failed to get transaction ${txHash}:`, error instanceof Error ? error.message : error);
+      }
+      return null;
+    }
+  }
+
+  /**
+   * Get address transaction and transfer counts from REST API v2
+   * Queries: /api/v2/addresses/{address}
+   * Returns: { tx_count, token_transfers_count }
+   */
+  private async getAddressTransactionCounts(address: string): Promise<{ txCount: number; transferCount: number }> {
+    try {
+      // Use direct_api_call to query Blockscout REST API v2 addresses endpoint
+      // This endpoint returns comprehensive address statistics including transaction counts
+      const response = await this.callApi("direct_api_call", {
+        chain_id: this.chainId,
+        endpoint_path: `/api/v2/addresses/${address}`,
+      });
+
+      const debug = process.env.DEBUG_BLOCKSCOUT === "true";
+      
+      // Extract the response data - direct_api_call returns nested structure
+      let data = response;
+      if (response.data && typeof response.data === "object") {
+        data = response.data;
+      }
+
+      if (debug) {
+        console.log("[DEBUG] REST API /addresses response:", JSON.stringify(data, null, 2).substring(0, 1000));
+      }
+
+      // Extract counts from the API response
+      // The /api/v2/addresses/{address} endpoint returns various possible field names
+      // depending on configuration, so check multiple possibilities
+      let txCount = Number(data.tx_count) || Number(data.transactions_count) || 0;
+      let transferCount = Number(data.token_transfers_count) || Number(data.transfer_count) || 0;
+
+      // If counts are still 0, they might not be available in this endpoint
+      // The Blockscout REST API v2 may not always include these aggregate counts
+      // Use get_transactions_by_address endpoint to fetch and count instead
+      if (txCount === 0) {
+        try {
+          const txResponse = await this.callApi("get_transactions_by_address", {
+            chain_id: this.chainId,
+            address,
+            limit: 1,  // Just need count, not full data
+          });
+          
+          // The response should include pagination info with total count
+          if (txResponse && txResponse.total) {
+            txCount = Number(txResponse.total);
+          }
+          
+          if (debug) {
+            console.log(`[DEBUG] Fetched tx_count from get_transactions_by_address: ${txCount}`);
+          }
+        } catch (fallbackError) {
+          if (debug) {
+            console.log(`[DEBUG] Fallback tx count fetch failed:`, fallbackError instanceof Error ? fallbackError.message : fallbackError);
+          }
+        }
+      }
+
+      if (debug) {
+        console.log(`[DEBUG] Extracted from /api/v2/addresses: tx_count=${txCount}, token_transfers_count=${transferCount}`);
+      }
+
+      return {
+        txCount,
+        transferCount,
+      };
+    } catch (e) {
+      // If direct_api_call fails, return defaults
+      const debug = process.env.DEBUG_BLOCKSCOUT === "true";
+      if (debug) {
+        console.log(`[DEBUG] Failed to fetch transaction counts from REST API:`, e instanceof Error ? e.message : e);
+      }
+      return { txCount: 0, transferCount: 0 };
+    }
   }
 
   /**
@@ -233,9 +371,11 @@ export class BlockscoutClient {
       for (const tx of transactions) {
         try {
           const logs = await this.getTransactionLogs(tx.hash, DIAMOND_CUT_SIGNATURE);
-          
+
           for (const log of logs) {
-            events.push(this.parseDiamondCutEvent(log));
+            // parseDiamondCutEvent now async to allow fetching full truncated logs
+            const ev = await this.parseDiamondCutEvent(log);
+            events.push(ev);
           }
         } catch (error) {
           // Skip transactions that error
@@ -272,19 +412,115 @@ export class BlockscoutClient {
   }
 
   /**
-   * Parse a DiamondCut event log into structured data
+   * Parse a DiamondCut event log into structured data.
+   * This function is async because Blockscout may return truncated `data`/`decoded` fields.
+   * When truncated, we fetch full transaction logs and re-attempt decoding.
    */
-  private parseDiamondCutEvent(log: any): DiamondCutEvent {
-    // TODO: Implement proper ABI decoding
-    // For now, return raw event data
+  private async parseDiamondCutEvent(log: any): Promise<DiamondCutEvent> {
+    let facetCuts: any[] = [];
+    let decoded = log.decoded || log.decoded_event || null;
+
+    // If decoding is missing or truncated, attempt to fetch full logs for this tx
+    try {
+      if ((!decoded || Object.keys(decoded).length === 0) && log.txHash && log.data_truncated) {
+        try {
+          const full = await this.getFullTransactionLogs(log.txHash || log.transaction_hash);
+          if (full && Array.isArray(full) && full.length > 0) {
+            // try to find the exact log by index if possible
+            const match = full.find((l: any) => l.index === log.index) || full[0];
+            if (match && match.decoded) decoded = match.decoded;
+          }
+        } catch (e) {
+          // ignore fetch errors, continue with whatever decoded we have
+        }
+      }
+    } catch {
+      // swallow
+    }
+
+    // Extract facetCuts from various decoded shapes
+    try {
+      if (decoded && typeof decoded === "object") {
+        // many shapes: decoded.args, decoded.arguments, decoded.parameters, decoded.values
+        const args = decoded.args || decoded.arguments || decoded.params || decoded.values || decoded.parameters || decoded.data;
+        if (Array.isArray(args) && args.length > 0) {
+          if (Array.isArray(args[0])) {
+            facetCuts = args[0];
+          } else if (args[0] && typeof args[0] === "object") {
+            facetCuts = args[0].facets || args[0]._facets || args[0].facetCuts || args[0].value || [];
+          }
+        }
+
+        // last resort: try to extract structured arrays from decoded object
+        if ((!facetCuts || facetCuts.length === 0)) {
+          facetCuts = this._extractFacetCutsFromDecoded(decoded) || [];
+        }
+      }
+    } catch (e) {
+      facetCuts = [];
+    }
+
+    // Normalize initAddress if provided in topics (topic[1] may be padded address)
+    let initAddress = "0x0000000000000000000000000000000000000000";
+    try {
+      if (Array.isArray(log.topics) && log.topics[1]) {
+        const t = log.topics[1];
+        if (typeof t === "string" && t.startsWith("0x") && t.length >= 42) {
+          initAddress = `0x${t.slice(-40)}`.toLowerCase();
+        }
+      }
+    } catch {
+      // keep default
+    }
+
     return {
-      txHash: log.transaction_hash,
-      blockNumber: log.block_number,
+      txHash: log.transaction_hash || log.transactionHash || log.txHash || "",
+      blockNumber: log.block_number || log.blockNumber || 0,
       timestamp: log.timestamp || 0,
-      facetCuts: [], // Will be decoded from log.data
-      initAddress: log.topics[1] || "0x0000000000000000000000000000000000000000",
-      calldata: log.data,
+      facetCuts: facetCuts || [],
+      initAddress,
+      calldata: log.data || log.calldata || "",
     };
+  }
+
+  // Try to extract an array of facet cut objects from various decoded shapes
+  private _extractFacetCutsFromDecoded(decoded: any): any[] | null {
+    try {
+      if (!decoded) return null;
+      // check parameters or value fields for nested arrays of objects
+      const candidates = [] as any[];
+      if (Array.isArray(decoded.parameters)) candidates.push(...decoded.parameters.map((p: any) => p.value));
+      if (Array.isArray(decoded.args)) candidates.push(...decoded.args.map((p: any) => p.value));
+      // include top-level arrays
+      for (const k of Object.keys(decoded)) {
+        if (Array.isArray(decoded[k])) candidates.push(decoded[k]);
+      }
+
+      for (const cand of candidates) {
+        if (!Array.isArray(cand)) continue;
+        if (cand.length === 0) continue;
+        // check if items look like facet cut objects
+        const first = cand[0];
+        if (first && typeof first === 'object') {
+          const hasKeys = 'action' in first || 'facetAddress' in first || 'facet' in first || 'target' in first;
+          if (hasKeys) return cand;
+        }
+      }
+    } catch {
+      // ignore
+    }
+    return null;
+  }
+
+  // Fetch full transaction logs (v2 endpoint) to avoid truncated data
+  async getFullTransactionLogs(txHash: string) {
+    try {
+      const url = `/api/v2/transactions/${txHash}/logs`;
+      const resp = await this.callApi(url, { chain_id: this.chainId });
+      return resp?.data || null;
+    } catch (e) {
+      return null;
+    }
   }
 
   /**
@@ -374,10 +610,24 @@ export class BlockscoutClient {
 
       if (Array.isArray(result)) {
         if (debug) console.log(`[DEBUG] facets() succeeded, returned ${result.length} facets`);
-        return result.map((facet: any) => ({
-          facetAddress: facet.facetAddress || facet[0],
-          functionSelectors: (facet.functionSelectors || facet[1] || []).map((s: string) => String(s)),
-        }));
+        const facets: DiamondFacet[] = [];
+        const seen = new Set<string>();
+        for (const facet of result) {
+          const rawAddress = facet.facetAddress || facet[0];
+          // Validate address format
+          if (rawAddress && typeof rawAddress === 'string' && rawAddress.startsWith('0x') && rawAddress.length === 42) {
+            const facetAddress = rawAddress.toLowerCase();
+            if (seen.has(facetAddress)) continue;
+            seen.add(facetAddress);
+            facets.push({
+              facetAddress,
+              functionSelectors: (facet.functionSelectors || facet[1] || []).map((s: string) => String(s)),
+            });
+          }
+        }
+        if (facets.length > 0) {
+          return facets;
+        }
       }
     } catch (e) {
       if (debug) console.log(`[DEBUG] facets() failed: ${e instanceof Error ? e.message : String(e)}`);
@@ -388,24 +638,33 @@ export class BlockscoutClient {
     try {
       if (debug) console.log("[DEBUG] Trying facetAddresses() call...");
       const addresses = await this.readContract(diamondAddress, "facetAddresses", [], FACET_ADDRESSES_ABI);
-      if (Array.isArray(addresses) && addresses.length > 0) {
+        if (Array.isArray(addresses) && addresses.length > 0) {
         if (debug) console.log(`[DEBUG] facetAddresses() succeeded, returned ${addresses.length} addresses`);
         const facets: DiamondFacet[] = [];
+        const seen = new Set<string>();
         for (const addr of addresses) {
-          try {
-            const selectors = await this.readContract(
-              diamondAddress,
-              "facetFunctionSelectors",
-              [addr],
-              FACET_SELECTORS_ABI,
-            );
-            facets.push({ facetAddress: addr, functionSelectors: Array.isArray(selectors) ? selectors : [] });
-          } catch {
-            // If selectors call fails, still include the address
-            facets.push({ facetAddress: addr, functionSelectors: [] });
+          // Validate address format
+          if (addr && typeof addr === 'string' && addr.startsWith('0x') && addr.length === 42) {
+            const normalized = addr.toLowerCase();
+            if (seen.has(normalized)) continue;
+            seen.add(normalized);
+            try {
+              const selectors = await this.readContract(
+                diamondAddress,
+                "facetFunctionSelectors",
+                [addr],
+                FACET_SELECTORS_ABI,
+              );
+              facets.push({ facetAddress: normalized, functionSelectors: Array.isArray(selectors) ? selectors : [] });
+            } catch {
+              // If selectors call fails, still include the address
+              facets.push({ facetAddress: normalized, functionSelectors: [] });
+            }
           }
         }
-        return facets;
+        if (facets.length > 0) {
+          return facets;
+        }
       }
     } catch (e) {
       if (debug) console.log(`[DEBUG] facetAddresses() failed: ${e instanceof Error ? e.message : String(e)}`);
@@ -425,13 +684,16 @@ export class BlockscoutClient {
         const unique = new Set<string>();
         const facets: DiamondFacet[] = [];
         for (const impl of basicInfo.implementations) {
-          const addr = impl.address_hash || impl.address;
-          if (addr && !unique.has(addr)) {
+          const raw = impl.address_hash || impl.address || impl;
+          if (!raw || typeof raw !== 'string') continue;
+          const addr = raw.toLowerCase();
+          // Validate that this is actually an address, not a transaction hash
+          if (/^0x[0-9a-f]{40}$/.test(addr) && !unique.has(addr)) {
             unique.add(addr);
             facets.push({ facetAddress: addr, functionSelectors: [] });
           }
         }
-        if (debug) console.log(`[DEBUG] Implementations fallback succeeded, found ${facets.length} unique addresses`);
+        if (debug) console.log(`[DEBUG] Implementations fallback succeeded, found ${facets.length} valid addresses`);
         return facets;
       }
     } catch (e) {
@@ -674,6 +936,9 @@ export interface AddressInfo {
   creationTxHash?: string;
   isVerified: boolean;
   name?: string;
+  tx_count?: number;
+  token_transfers_count?: number;
+  transactions_count?: number;
 }
 
 export interface ContractCode {
