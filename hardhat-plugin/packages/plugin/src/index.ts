@@ -153,6 +153,24 @@ const plugin: HardhatPlugin = {
         type: ArgumentType.BOOLEAN,
         defaultValue: false,
       })
+      .addOption({
+        name: "skipCompile",
+        description: "Skip contract compilation",
+        type: ArgumentType.BOOLEAN,
+        defaultValue: false,
+      })
+      .addOption({
+        name: "action",
+        description: "Global action for all facets (add/replace/remove)",
+        type: ArgumentType.STRING,
+        defaultValue: "",
+      })
+      .addOption({
+        name: "separateModules",
+        description: "Generate separate Ignition modules per facet",
+        type: ArgumentType.BOOLEAN,
+        defaultValue: false,
+      })
       .setAction(() => import("./tasks/markov/deploy.js"))
       .build(),
 

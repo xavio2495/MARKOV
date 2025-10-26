@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="design/logo/logo-color.png" alt="MARKOV-logo-1" width="150"/>
+  <img src="design/logo/logo-white.png" alt="MARKOV-logo-1" width="150"/>
   <br><br>
   <img src="design/logo/logo-large-white.png" alt="MARKOV-logo-2" width="350"/>
 </p>

@@ -62,6 +62,11 @@ export interface Commit {
   parentHash?: string; // Parent commit hash (for DAG)
   parentHashes?: string[]; // Multiple parents for merge commits
   branch: string; // Branch name
+  // Deployment metadata (optional)
+  txHash?: string; // Transaction hash of diamondCut
+  gasUsed?: number; // Actual gas consumed
+  gasEstimate?: number; // Pre-execution gas estimate
+  partial?: boolean; // True if some facets failed to deploy
 }
 
 // Branch configuration for multi-chain deployment
@@ -90,4 +95,39 @@ export interface HistoryData {
   currentBranch: string;
   diamondAddress?: string; // Deprecated: use BranchInfo.config.diamondAddress
   commitIndex: Map<string, { branch: string; index: number }>; // Fast lookup
+}
+
+// Deployment Report Types
+export interface DeployedFacetInfo {
+  name: string;
+  address: string;
+  gasUsed: number;
+  status: "success" | "failed";
+  error?: string;
+  selectors: string[];
+  action: 0 | 1 | 2; // Add=0, Replace=1, Remove=2
+}
+
+export interface DiamondCutResult {
+  txHash: string;
+  status: "success" | "reverted";
+  blockNumber: number;
+  gasUsed: number;
+  gasEstimate: number;
+  cost: string; // In ETH
+  error?: string;
+}
+
+export interface DeploymentReport {
+  timestamp: number;
+  branch: string;
+  diamondAddress: string;
+  network: string;
+  chainId: number;
+  status: "success" | "partial" | "failed";
+  facets: DeployedFacetInfo[];
+  diamondCut?: DiamondCutResult;
+  commitHash?: string;
+  errors: string[];
+  nextSteps: string[];
 }
