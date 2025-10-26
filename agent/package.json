@@ -1,0 +1,67 @@
+{
+  "name": "hardhat-plugin-markov",
+  "version": "2.0.0",
+  "description": "Free open-source AI-powered smart contract auditing with uAgents, MeTTa reasoning, and ASI:One chat",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "author": "charlesms-eth",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/charlesms-eth/markov-audit"
+  },
+  "keywords": [
+    "hardhat",
+    "hardhat-plugin",
+    "audit",
+    "security",
+    "smart-contracts",
+    "ai",
+    "metta",
+    "uagents",
+    "fetch.ai",
+    "asi-one",
+    "blockscout",
+    "free",
+    "open-source"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "watch": "tsc --watch",
+    "test": "hardhat test",
+    "lint": "eslint 'src/**/*.ts'",
+    "format": "prettier --write 'src/**/*.ts'",
+    "setup": "bash scripts/setup.sh",
+    "start-engine": "cd python && source venv/bin/activate && python main.py",
+    "register-agents": "cd python && source venv/bin/activate && python scripts/register_agents.py",
+    "audit": "npx hardhat markov audit",
+    "demo": "bash scripts/demo.sh"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "@typescript-eslint/eslint-plugin": "^6.15.0",
+    "@typescript-eslint/parser": "^6.15.0",
+    "eslint": "^8.55.0",
+    "hardhat": "^2.19.0",
+    "prettier": "^3.1.0",
+    "typescript": "^5.3.0"
+  },
+  "dependencies": {
+    "axios": "^1.6.2",
+    "chalk": "^4.1.2",
+    "dotenv": "^16.3.1",
+    "ethers": "^6.9.0",
+    "ora": "^5.4.1"
+  },
+  "peerDependencies": {
+    "hardhat": "^2.0.0"
+  },
+  "files": [
+    "dist/",
+    "src/",
+    "python/",
+    "scripts/",
+    "LICENSE",
+    "README.md"
+  ]
+}
