@@ -147,9 +147,8 @@ export default async function markovDispatcher(
   } catch (error) {
     if (error instanceof Error) {
       console.error(`Error executing markov ${command}:`, error.message);
-      if (hre.config.markov.verbose) {
-        console.error(error.stack);
-      }
+      // Stack traces can be noisy in CLI; uncomment next line for debugging
+      // console.error(error.stack);
     }
     throw error;
   }
@@ -243,11 +242,16 @@ function parseArgsForCommand(
       break;
       
     case "help":
+      // markov help [command]
+      if (args.length > 0) {
+        parsed.command = args[0];
+      }
+      break;
+      
     case "log":
     case "status":
     case "sync":
     case "viz":
-    case "stats":
     case "config":
     case "init":
       // These commands use options only

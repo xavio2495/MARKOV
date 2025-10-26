@@ -10,7 +10,7 @@ interface MarkovVizArguments extends TaskArguments {
 }
 
 /**
- * Check if contracts directory exists and has Solidity files
+ * Check if contracts directory exists and has Solidity files (recursively)
  */
 function checkContractsDirectory(projectRoot: string): { exists: boolean; hasContracts: boolean; contractsDir: string } {
   const contractsDir = path.join(projectRoot, "contracts");
@@ -19,7 +19,25 @@ function checkContractsDirectory(projectRoot: string): { exists: boolean; hasCon
     return { exists: false, hasContracts: false, contractsDir };
   }
 
-  const hasContracts = fs.readdirSync(contractsDir).some(file => file.endsWith('.sol'));
+  // Recursively look for any .sol file inside contracts/
+  function hasSolidityFilesRecursively(dir: string): boolean {
+    try {
+      const entries = fs.readdirSync(dir, { withFileTypes: true });
+      for (const entry of entries) {
+        const fullPath = path.join(dir, entry.name);
+        if (entry.isDirectory()) {
+          if (hasSolidityFilesRecursively(fullPath)) return true;
+        } else if (entry.isFile() && entry.name.toLowerCase().endsWith(".sol")) {
+          return true;
+        }
+      }
+      return false;
+    } catch {
+      return false;
+    }
+  }
+
+  const hasContracts = hasSolidityFilesRecursively(contractsDir);
   return { exists: true, hasContracts, contractsDir };
 }
 

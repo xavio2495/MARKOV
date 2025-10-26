@@ -6,6 +6,9 @@ import type { HardhatRuntimeEnvironment } from "hardhat/types/hre";
 import type { TaskArguments } from "hardhat/types/tasks";
 import { getNetworkResolver, type ChainData } from "../../utils/network-resolver.js";
 import { BlockscoutClient } from "../../utils/blockscout.js";
+import { createHistoryStorage, generateCommitHash } from "../../storage/history-storage.js";
+import type { BranchConfig, Commit } from "../../types.js";
+import { syncConfigFromBranch, ensureConfigKeys } from "./config.js";
 
 interface MarkovCloneArguments extends TaskArguments {
   address?: string;
@@ -55,6 +58,68 @@ async function promptUser(
  */
 function isValidAddress(address: string): boolean {
   return /^0x[a-fA-F0-9]{40}$/.test(address);
+}
+
+/**
+ * Prompt user if they want to clone all deployments
+ */
+async function promptForBulkClone(implementationCount: number): Promise<boolean> {
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout,
+  });
+
+  const question = chalk.cyan(
+    `\nDo you want to clone all ${implementationCount} deployment(s)? (y/n): `
+  );
+  
+  let answer = "";
+  while (true) {
+    answer = (await rl.question(question)).trim().toLowerCase();
+    if (answer === "y" || answer === "yes") {
+      rl.close();
+      return true;
+    }
+    if (answer === "n" || answer === "no") {
+      rl.close();
+      return false;
+    }
+    console.log(chalk.yellow("Please answer 'y' or 'n'"));
+  }
+}
+
+/**
+ * Determine the Diamond project name from implementations
+ */
+async function getDiamondProjectName(
+  diamondAddress: string,
+  implementations: any[],
+  blockscout: BlockscoutClient
+): Promise<string> {
+  // Try to get name from the first verified implementation
+  for (const impl of implementations) {
+    try {
+      const contractCode = await blockscout.inspectContractCode(impl.address);
+      if (contractCode.name && contractCode.name.trim()) {
+        // Extract a clean project name (remove "Facet" suffix if present)
+        let name = contractCode.name.trim();
+        // If it's a facet name, try to extract the project name
+        if (name.includes('Diamond')) {
+          return name;
+        }
+        // Otherwise use a generic name based on the contract
+        const parts = name.split(/(?=[A-Z])/); // Split on capital letters
+        if (parts.length > 1 && parts[parts.length - 1].toLowerCase() === 'facet') {
+          return parts.slice(0, -1).join('') + '-Diamond';
+        }
+      }
+    } catch (error) {
+      // Continue to next implementation
+    }
+  }
+  
+  // Fallback: use address-based name
+  return `Diamond-${diamondAddress.slice(2, 10)}`;
 }
 
 /**
@@ -146,6 +211,91 @@ function initializeMarkovDirectory(projectRoot: string): void {
 }
 
 /**
+ * Read Author from .markov/config.json (fallback to "markov")
+ */
+async function getAuthorFromConfig(root: string): Promise<string> {
+  try {
+    const cfgPath = path.join(root, ".markov", "config.json");
+    if (!fs.existsSync(cfgPath)) return "markov";
+    const content = fs.readFileSync(cfgPath, "utf-8");
+    const json = JSON.parse(content);
+    return json.Author && typeof json.Author === "string" && json.Author.trim() ? json.Author : "markov";
+  } catch {
+    return "markov";
+  }
+}
+
+/**
+ * Suggest a branch name based on the source chain
+ */
+function suggestBranchName(chain: ChainData): string {
+  const base = (chain.shortName || chain.name || "imported")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  return base || "imported";
+}
+
+/**
+ * Create a Markov branch and set it as current based on clone details
+ */
+async function createBranchFromClone(
+  hre: HardhatRuntimeEnvironment,
+  chain: ChainData,
+  diamondAddress: string,
+  rpcUrl: string | undefined
+): Promise<string> {
+  const root = hre.config.paths.root;
+  const storage = createHistoryStorage(root);
+  await storage.initialize(root);
+
+  // Find a unique branch name
+  const baseName = suggestBranchName(chain);
+  const existing = await storage.listBranches();
+  let branchName = baseName;
+  let i = 1;
+  while (existing.includes(branchName)) {
+    branchName = `${baseName}-${i++}`;
+  }
+
+  const author = await getAuthorFromConfig(root);
+
+  const branchConfig: Omit<BranchConfig, "name"> = {
+    chain: chain.shortName || chain.name,
+    chainId: chain.chainId,
+    rpcUrl: rpcUrl || "",
+    diamondAddress,
+    explorerUrl: chain.explorers && chain.explorers[0] ? chain.explorers[0].url : undefined,
+    explorerApiKey: undefined,
+    createdAt: Date.now(),
+    createdFrom: "clone",
+    createdFromCommit: undefined,
+  };
+
+  // Create branch file
+  await storage.createBranch(branchName, branchConfig);
+
+  // Initial commit
+  const initialCommit: Omit<Commit, "hash"> = {
+    timestamp: Date.now(),
+    author,
+    message: `Clone '${diamondAddress}' from ${chain.name}`,
+    diamondAddress,
+    cut: [],
+    parentHash: undefined,
+    branch: branchName,
+  };
+  const commitWithHash: Commit = { ...initialCommit, hash: generateCommitHash(initialCommit) };
+  await storage.addCommit(branchName, commitWithHash);
+
+  // Set as current and sync config.json from branch
+  await storage.setCurrentBranchName(branchName);
+  await syncConfigFromBranch(branchName, hre);
+
+  return branchName;
+}
+
+/**
  * Save cloned contract metadata
  */
 function saveCloneMetadata(
@@ -166,19 +316,167 @@ function saveCloneMetadata(
 }
 
 /**
+ * Download source code for a single facet deployment
+ */
+async function downloadFacetSource(
+  facetAddr: string,
+  index: number,
+  total: number,
+  projectRoot: string,
+  projectName: string,
+  blockscout: BlockscoutClient,
+  verbose: boolean = false
+): Promise<{ filesDownloaded: number; success: boolean }> {
+  console.log(chalk.gray(`  [${index}/${total}] ${facetAddr}...`));
+  
+  let downloadedFileCount = 0;
+
+  try {
+    // Get initial contract metadata
+    const contractCode = await blockscout.inspectContractCode(facetAddr);
+
+    // Strategy 1: Multi-file contract with source_code_tree_structure
+    if (contractCode.sourceCodeTreeStructure && contractCode.sourceCodeTreeStructure.length > 0) {
+      console.log(chalk.gray(`    Found ${contractCode.sourceCodeTreeStructure.length} source file(s)`));
+      
+      for (const fileName of contractCode.sourceCodeTreeStructure) {
+        try {
+          const fileCode = await blockscout.inspectContractCode(facetAddr, fileName);
+          
+          if (fileCode.sourceCode) {
+            // Save directly into project structure, preserving file paths
+            const filePath = path.join(projectRoot, projectName, fileName);
+            const fileDir = path.dirname(filePath);
+            
+            if (!fs.existsSync(fileDir)) {
+              fs.mkdirSync(fileDir, { recursive: true });
+            }
+            
+            // Overwrite if exists to ensure latest version
+            fs.writeFileSync(filePath, fileCode.sourceCode, "utf-8");
+            downloadedFileCount++;
+          }
+        } catch (fileError) {
+          if (verbose) {
+            console.log(chalk.gray(`      Failed to fetch ${fileName}: ${fileError instanceof Error ? fileError.message : String(fileError)}`));
+          }
+        }
+      }
+      
+      console.log(chalk.green(`    Saved ${downloadedFileCount} file(s)`));
+      return { filesDownloaded: downloadedFileCount, success: true };
+    }
+    // Strategy 2: Single-file contract with sourceCode directly
+    else if (contractCode.sourceCode) {
+      const facetName = contractCode.name || `Facet_${facetAddr.slice(2, 8)}`;
+      // Save in contracts/facets/ subdirectory within project
+      const outPath = path.join(projectRoot, projectName, "contracts", "facets", `${facetName}.sol`);
+      const outDir = path.dirname(outPath);
+      
+      if (!fs.existsSync(outDir)) {
+        fs.mkdirSync(outDir, { recursive: true });
+      }
+      
+      // Overwrite if exists
+      fs.writeFileSync(outPath, contractCode.sourceCode, "utf-8");
+      console.log(chalk.green(`    Saved ${facetName}.sol`));
+      downloadedFileCount++;
+      return { filesDownloaded: downloadedFileCount, success: true };
+    }
+    // Strategy 3: Try Sourcify if available
+    else if (contractCode.sourcifyRepoUrl) {
+      console.log(chalk.gray(`    Trying Sourcify repository...`));
+      const sourcifyData = await blockscout.fetchSourceFromSourcify(contractCode.sourcifyRepoUrl);
+      
+      if (sourcifyData && Object.keys(sourcifyData.sources).length > 0) {
+        for (const [filePathRel, sourceCode] of Object.entries(sourcifyData.sources)) {
+          // Save directly into project structure
+          const targetPath = path.join(projectRoot, projectName, filePathRel);
+          const targetDir = path.dirname(targetPath);
+          if (!fs.existsSync(targetDir)) fs.mkdirSync(targetDir, { recursive: true });
+          
+          // Overwrite if exists
+          fs.writeFileSync(targetPath, sourceCode, "utf-8");
+          downloadedFileCount++;
+        }
+        console.log(chalk.green(`    Saved ${Object.keys(sourcifyData.sources).length} file(s) from Sourcify`));
+        return { filesDownloaded: downloadedFileCount, success: true };
+      } else {
+        console.log(chalk.yellow(`    Sourcify fetch failed`));
+      }
+    } else {
+      console.log(chalk.yellow(`    Source code not available (not verified)`));
+    }
+  } catch (error) {
+    console.log(chalk.gray(`    Not verified individually (normal for Diamond facets)`));
+  }
+
+  return { filesDownloaded: 0, success: false };
+}
+
+/**
+ * Download all deployments (bulk clone)
+ */
+async function downloadAllDeployments(
+  diamondAddress: string,
+  implementations: any[],
+  projectRoot: string,
+  blockscout: BlockscoutClient,
+  verbose: boolean = false
+): Promise<{ totalFiles: number; successCount: number; projectName: string }> {
+  // Determine the project name
+  const projectName = await getDiamondProjectName(diamondAddress, implementations, blockscout);
+  console.log(chalk.green(`\nProject name: ${chalk.cyan(projectName)}`));
+  
+  console.log(chalk.blue(`\nDownloading source code for all ${implementations.length} deployment(s)...`));
+  console.log(chalk.gray(`Files will be merged into: ${chalk.cyan(projectName)}/`));
+  
+  let totalFiles = 0;
+  let successCount = 0;
+
+  for (let i = 0; i < implementations.length; i++) {
+    const impl = implementations[i];
+    const result = await downloadFacetSource(
+      impl.address,
+      i + 1,
+      implementations.length,
+      projectRoot,
+      projectName,
+      blockscout,
+      verbose
+    );
+    
+    totalFiles += result.filesDownloaded;
+    if (result.success) {
+      successCount++;
+    }
+  }
+
+  return { totalFiles, successCount, projectName };
+}
+
+/**
  * Clone an existing Diamond contract from another chain.
  */
 export default async function markovClone(
   taskArguments: MarkovCloneArguments,
   hre: HardhatRuntimeEnvironment,
 ) {
-  console.log(chalk.bold.blue("\n=== Cloning Diamond Contract ===\n"));
+  // Centered header
+  const headerText = "Cloning Diamond Contract";
+  const padding = Math.floor((68 - headerText.length) / 2);
+  const centeredHeader = " ".repeat(padding) + headerText + " ".repeat(68 - padding - headerText.length);
+  
+  console.log(chalk.blue("\n╔════════════════════════════════════════════════════════════════════╗"));
+  console.log(chalk.blue("║") + chalk.cyan.bold(centeredHeader) + chalk.blue("║"));
+  console.log(chalk.blue("╚════════════════════════════════════════════════════════════════════╝\n"));
 
-  // Debug: Show what arguments were received
-  if (hre.config.markov?.verbose) {
-    console.log(chalk.gray("Debug - Received arguments:"));
-    console.log(chalk.gray(JSON.stringify(taskArguments, null, 2)));
-  }
+  // Pre-flight: ensure config has all 8 required keys
+  await ensureConfigKeys(hre, { promptIfMissing: true });
+
+  // Debug: Show what arguments were received (disabled by default)
+  // console.log(chalk.gray("Debug - Received arguments:"));
+  // console.log(chalk.gray(JSON.stringify(taskArguments, null, 2)));
 
   const resolver = getNetworkResolver();
 
@@ -234,16 +532,14 @@ export default async function markovClone(
     console.log(chalk.blue("\nVerifying contract address..."));
     const addressInfo = await blockscout.getAddressInfo(diamondAddress);
 
-    // Debug: Show what we received
-    if (hre.config.markov?.verbose) {
-      console.log(chalk.gray(`\nDebug - Address Info:`));
-      console.log(chalk.gray(JSON.stringify(addressInfo, null, 2)));
-    }
+    // Debug: Show what we received (disabled by default)
+    // console.log(chalk.gray(`\nDebug - Address Info:`));
+    // console.log(chalk.gray(JSON.stringify(addressInfo, null, 2)));
 
     if (!addressInfo.isContract) {
       console.log(chalk.red(`\nError: Address ${diamondAddress} is not a contract`));
       console.log(chalk.yellow(`API returned isContract: ${addressInfo.isContract}`));
-      console.log(chalk.gray("\nTip: Run with verbose mode to see full API response"));
+      // console.log(chalk.gray("\nTip: Enable debug logging to see full API response"));
       return;
     }
 
@@ -257,7 +553,7 @@ export default async function markovClone(
     }
 
     // Get Deployments/Implementations and prompt user to choose one
-    console.log(chalk.blue("\nQuerying Diamond deployments (implementations)..."));
+    console.log(chalk.blue("\nQuerying Diamond Facet deployments (implementations)..."));
     const implementations = await blockscout.getImplementations(diamondAddress);
 
     if (implementations.length === 0) {
@@ -270,6 +566,63 @@ export default async function markovClone(
         console.log(chalk.white(`  ${i + 1}.`.padEnd(2) + ` ${label}`));
       });
 
+      // Ask if user wants to clone all deployments
+      const cloneAll = await promptForBulkClone(implementations.length);
+
+      if (cloneAll) {
+        // Bulk clone workflow: download all deployments
+        console.log(chalk.blue("\nSetting up project structure..."));
+        const projectRoot = process.cwd();
+        initializeMarkovDirectory(projectRoot);
+
+        const { totalFiles, successCount, projectName } = await downloadAllDeployments(
+          diamondAddress,
+          implementations,
+          projectRoot,
+          blockscout,
+          false
+        );
+
+        console.log(chalk.green(`\nDownloaded source code for ${chalk.cyan(successCount.toString())}/${chalk.cyan(implementations.length.toString())} deployment(s)`));
+        console.log(chalk.green(`Total files saved: ${chalk.cyan(totalFiles.toString())}`));
+          console.log(chalk.green(`Project location: ${chalk.cyan(projectName)}/`));
+
+        // Create Markov branch in new simplified architecture
+  const rpcUrl = ((chain.rpc || []).find((u: any) => typeof u === "string" && /^https?:/i.test(u)) as string | undefined);
+        const newBranch = await createBranchFromClone(hre, chain, diamondAddress!, rpcUrl);
+        console.log(chalk.green(`\n✓ Created Markov branch '${newBranch}' (set as current)`));
+
+        // Update clone metadata
+        const metadata = {
+          address: diamondAddress,
+          chainId: chain.chainId,
+          chainName: chain.name,
+          clonedAt: new Date().toISOString(),
+          facetCount: implementations.length,
+        };
+        saveCloneMetadata(projectRoot, metadata);
+
+        // Summary
+        console.log(chalk.bold.green("\n=== Bulk Clone Completed Successfully ===\n"));
+        console.log(chalk.white("Summary:"));
+        console.log(chalk.white(`  Diamond Address: ${chalk.cyan(diamondAddress)}`));
+        console.log(chalk.white(`  Network: ${chalk.cyan(chain.name)} (Chain ID: ${chain.chainId})`));
+          console.log(chalk.white(`  Project Name: ${chalk.cyan(projectName)}`));
+        console.log(chalk.white(`  Deployments Cloned: ${chalk.cyan(successCount.toString())}/${chalk.cyan(implementations.length.toString())}`));
+        console.log(chalk.white(`  Source Files Downloaded: ${chalk.cyan(totalFiles.toString())}`));
+        console.log(chalk.white(`  Cloned At: ${chalk.cyan(metadata.clonedAt)}`));
+
+        console.log(chalk.blue("\nNext steps:"));
+          console.log(chalk.gray(`  1. Review the downloaded contract sources in ${projectName}/`));
+        console.log(chalk.gray("  2. Run 'hardhat markov status' to check the current state"));
+        console.log(chalk.gray("  3. Run 'hardhat markov log' to view version history"));
+          console.log(chalk.gray(`\nAll ${implementations.length} deployment(s) have been merged into a unified codebase.`));
+          console.log(chalk.gray("Duplicate files were overwritten with the latest version."));
+
+        return;
+      }
+
+      // Single deployment selection workflow
       const selection = await promptUser(
         "Enter the serial no or full address of the deployment to clone:",
         (answer) => {
@@ -297,117 +650,36 @@ export default async function markovClone(
 
       console.log(chalk.green(`\nSelected deployment: ${chalk.cyan(selectedImpl.name ?? "(unnamed)")} ${chalk.gray(selectedImpl.address)}`));
 
-  // Set up project structure before downloading
-  console.log(chalk.blue("\nSetting up project structure..."));
-  const projectRoot = process.cwd();
-  initializeMarkovDirectory(projectRoot);
+      // Set up project structure before downloading
+      console.log(chalk.blue("\nSetting up project structure..."));
+      const projectRoot = process.cwd();
+      initializeMarkovDirectory(projectRoot);
 
-  // Restrict cloning to the selected implementation only
-  // We'll reuse the existing download flow but only for the chosen address
-  console.log(chalk.blue("\nDownloading facet source code..."));
-      let downloadedCount = 0;
-      let downloadedFileCount = 0;
+      // Download the selected deployment
+        // For single deployment, use deployment name or create a folder structure
+        const singleProjectName = selectedImpl.name 
+          ? `${selectedImpl.name}-Clone`
+          : `Diamond-${diamondAddress.slice(2, 10)}`;
+      
+      console.log(chalk.blue("\nDownloading facet source code..."));
+      const result = await downloadFacetSource(
+        selectedImpl.address,
+        1,
+        1,
+        projectRoot,
+          singleProjectName,
+        blockscout,
+        false
+      );
 
-      const facetAddr = selectedImpl.address;
-      console.log(chalk.gray(`  [1/1] ${facetAddr}...`));
+      console.log(chalk.green(`\nDownloaded source code for ${chalk.cyan("1")}/1 facet(s)`));
+      console.log(chalk.green(`Total files saved: ${chalk.cyan(result.filesDownloaded.toString())}`));
+        console.log(chalk.green(`Project location: ${chalk.cyan(singleProjectName)}/`));
 
-      try {
-        // Get initial contract metadata
-        const contractCode = await blockscout.inspectContractCode(facetAddr);
-
-        // Strategy 1: Multi-file contract with source_code_tree_structure
-        if (contractCode.sourceCodeTreeStructure && contractCode.sourceCodeTreeStructure.length > 0) {
-          console.log(chalk.gray(`    Found ${contractCode.sourceCodeTreeStructure.length} source file(s)`));
-          
-          for (const fileName of contractCode.sourceCodeTreeStructure) {
-            try {
-              const fileCode = await blockscout.inspectContractCode(facetAddr, fileName);
-              
-              if (fileCode.sourceCode) {
-                // Save with original directory structure
-                const baseName = contractCode.name || `Facet_${facetAddr.slice(2, 8)}`;
-                const filePath = path.join(projectRoot, "contracts", "facets", baseName, fileName);
-                const fileDir = path.dirname(filePath);
-                
-                if (!fs.existsSync(fileDir)) {
-                  fs.mkdirSync(fileDir, { recursive: true });
-                }
-                
-                fs.writeFileSync(filePath, fileCode.sourceCode, "utf-8");
-                downloadedFileCount++;
-              }
-            } catch (fileError) {
-              if (hre.config.markov?.verbose) {
-                console.log(chalk.gray(`      Failed to fetch ${fileName}: ${fileError instanceof Error ? fileError.message : String(fileError)}`));
-              }
-            }
-          }
-          
-          console.log(chalk.green(`    Saved ${downloadedFileCount} file(s) to ${chalk.cyan(`contracts/facets/${contractCode.name}/`)}`));
-          downloadedCount++;
-        }
-        // Strategy 2: Single-file contract with sourceCode directly
-        else if (contractCode.sourceCode) {
-          const facetName = contractCode.name || `Facet_${facetAddr.slice(2, 8)}`;
-          const outPath = path.join(projectRoot, "contracts", "facets", `${facetName}.sol`);
-          fs.writeFileSync(outPath, contractCode.sourceCode, "utf-8");
-          console.log(chalk.green(`    Saved to ${chalk.cyan(`contracts/facets/${facetName}.sol`)}`));
-          downloadedCount++;
-          downloadedFileCount++;
-        }
-        // Strategy 3: Try Sourcify if available
-        else if (contractCode.sourcifyRepoUrl) {
-          console.log(chalk.gray(`    Trying Sourcify repository...`));
-          const sourcifyData = await blockscout.fetchSourceFromSourcify(contractCode.sourcifyRepoUrl);
-          
-          if (sourcifyData && Object.keys(sourcifyData.sources).length > 0) {
-            const baseName = contractCode.name || `Facet_${facetAddr.slice(2, 8)}`;
-            
-            for (const [filePathRel, sourceCode] of Object.entries(sourcifyData.sources)) {
-              const targetPath = path.join(projectRoot, "contracts", "facets", baseName, filePathRel);
-              const targetDir = path.dirname(targetPath);
-              if (!fs.existsSync(targetDir)) fs.mkdirSync(targetDir, { recursive: true });
-              fs.writeFileSync(targetPath, sourceCode, "utf-8");
-              downloadedFileCount++;
-            }
-            console.log(chalk.green(`    Saved ${Object.keys(sourcifyData.sources).length} file(s) from Sourcify`));
-            downloadedCount++;
-          } else {
-            console.log(chalk.yellow(`    Sourcify fetch failed`));
-          }
-        } else {
-          console.log(chalk.yellow(`    Source code not available (not verified)`));
-        }
-      } catch (error) {
-        console.log(chalk.gray(`    Not verified individually (normal for Diamond facets)`));
-      }
-
-      console.log(chalk.green(`\nDownloaded source code for ${chalk.cyan(downloadedCount.toString())}/1 facet(s)`));
-      console.log(chalk.green(`Total files saved: ${chalk.cyan(downloadedFileCount.toString())}`));
-
-      // Build and write history.json
-      const history = {
-        version: "1.0.0",
-        timestamp: new Date().toISOString(),
-        branch: String(chain.chainId),
-        head: selectedImpl.address,
-        deployments: implementations,
-        commits: [
-          {
-            hash: selectedImpl.address,
-            message: "Cloned Diamond project",
-            timestamp: new Date().toISOString(),
-            author: "markov-cli",
-            facets: [] as any[],
-            type: "clone",
-          },
-        ],
-      };
-
-      const markovDir = path.join(projectRoot, ".markov");
-      const historyPath = path.join(markovDir, "history.json");
-      fs.writeFileSync(historyPath, JSON.stringify(history, null, 2), "utf-8");
-      console.log(chalk.green(`\nWrote ${chalk.cyan(".markov/history.json")} with head ${chalk.cyan(selectedImpl.address)}`));
+      // Create Markov branch in new simplified architecture
+  const rpcUrl = ((chain.rpc || []).find((u: any) => typeof u === "string" && /^https?:/i.test(u)) as string | undefined);
+      const newBranch = await createBranchFromClone(hre, chain, diamondAddress!, rpcUrl);
+      console.log(chalk.green(`\n✓ Created Markov branch '${newBranch}' (set as current)`));
 
       // Update clone metadata
       const metadata = {
@@ -425,11 +697,12 @@ export default async function markovClone(
       console.log(chalk.white(`  Diamond Address: ${chalk.cyan(diamondAddress)}`));
       console.log(chalk.white(`  Network: ${chalk.cyan(chain.name)} (Chain ID: ${chain.chainId})`));
       console.log(chalk.white(`  Selected Deployment: ${chalk.cyan(selectedImpl.name ?? "(unnamed)")} ${chalk.gray(selectedImpl.address)}`));
-      console.log(chalk.white(`  Source Files Downloaded: ${chalk.cyan(downloadedFileCount.toString())}`));
+    console.log(chalk.white(`  Project Name: ${chalk.cyan(singleProjectName)}`));
+      console.log(chalk.white(`  Source Files Downloaded: ${chalk.cyan(result.filesDownloaded.toString())}`));
       console.log(chalk.white(`  Cloned At: ${chalk.cyan(metadata.clonedAt)}`));
 
       console.log(chalk.blue("\nNext steps:"));
-      console.log(chalk.gray("  1. Review the downloaded contract sources under contracts/facets/"));
+    console.log(chalk.gray(`  1. Review the downloaded contract sources in ${singleProjectName}/`));
       console.log(chalk.gray("  2. Run 'hardhat markov status' to check the current state"));
       console.log(chalk.gray("  3. Run 'hardhat markov log' to view version history"));
 
@@ -441,13 +714,16 @@ export default async function markovClone(
     const projectRoot = process.cwd();
     initializeMarkovDirectory(projectRoot);
 
-    // If no implementations, we can optionally fallback to old behavior, but for now, stop here
+    // If no implementations, still create a Markov branch so user can proceed
     if (implementations.length === 0) {
-      console.log(chalk.red("\nNo deployments available to clone from. Exiting."));
+  const rpcUrl = ((chain.rpc || []).find((u: any) => typeof u === "string" && /^https?:/i.test(u)) as string | undefined);
+      const newBranch = await createBranchFromClone(hre, chain, diamondAddress!, rpcUrl);
+      console.log(chalk.yellow("\nWarning: No implementations found via Blockscout."));
+      console.log(chalk.green(`✓ Created Markov branch '${newBranch}' (set as current)`));
       return;
     }
 
-    // (Previously we reconstructed version history via events here; moved to after selection workflow above)
+  // (History.json legacy flow removed; branch files are created instead)
 
   } catch (error) {
     console.log(chalk.red("\nError during clone operation:"));

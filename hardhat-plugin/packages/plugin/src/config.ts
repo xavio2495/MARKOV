@@ -1,6 +1,7 @@
 import { HardhatUserConfig } from "hardhat/config";
 import { HardhatConfig } from "hardhat/types/config";
 import { HardhatUserConfigValidationError } from "hardhat/types/hooks";
+import type { BranchConfig, BranchUserConfig } from "./types.js";
 
 /**
  * This function validates the parts of the HardhatUserConfig that are relevant
@@ -46,59 +47,72 @@ export async function validatePluginConfig(
       return errors;
     }
 
-    const markov = userConfig.markov;
+    const markov = userConfig.markov as any;
 
-    // Validate optional string fields
+    // Validate uppercase snake_case fields
     const stringFields = [
-      "chain",
-      "wallet",
-      "author",
-      "aiApiKey",
-      "aiModel",
-      "governanceAddress",
-      "mcpEndpoint",
-      "agentverseApiToken",
-      "historyPath",
+      "AGENTVERSE_API_TOKEN",
+      "ASI_API_KEY",
+      "Author",
+      "Chain",
+      "Governance_Address",
+      "Wallet_Address",
     ];
-
     for (const field of stringFields) {
-      const value = markov[field as keyof typeof markov];
+      const value = markov?.[field];
       if (value !== undefined && typeof value !== "string") {
-        errors.push({
-          path: ["markov", field],
-          message: `Expected a string.`,
-        });
+        errors.push({ path: ["markov", field], message: "Expected a string." });
       }
     }
 
-    // Validate gasPrice (can be string or number)
-    if (
-      markov.gasPrice !== undefined &&
-      typeof markov.gasPrice !== "string" &&
-      typeof markov.gasPrice !== "number"
-    ) {
-      errors.push({
-        path: ["markov", "gasPrice"],
-        message: "Expected a string or number.",
-      });
+    // Validate numeric fields
+    if (markov?.Gas_Price !== undefined && typeof markov.Gas_Price !== "number") {
+      errors.push({ path: ["markov", "Gas_Price"], message: "Expected a number." });
     }
 
     // Validate boolean fields
-    if (markov.verbose !== undefined && typeof markov.verbose !== "boolean") {
-      errors.push({
-        path: ["markov", "verbose"],
-        message: "Expected a boolean.",
-      });
+    if (markov?.Auto_Sync !== undefined && typeof markov.Auto_Sync !== "boolean") {
+      errors.push({ path: ["markov", "Auto_Sync"], message: "Expected a boolean." });
     }
 
-    if (
-      markov.autoSync !== undefined &&
-      typeof markov.autoSync !== "boolean"
-    ) {
-      errors.push({
-        path: ["markov", "autoSync"],
-        message: "Expected a boolean.",
-      });
+    // Validate branches configuration
+    if (markov.branches !== undefined) {
+      if (typeof markov.branches !== "object") {
+        errors.push({
+          path: ["markov", "branches"],
+          message: "Expected an object with branch configurations.",
+        });
+      } else {
+        // Validate each branch configuration
+        for (const [branchName, branchConfig] of Object.entries(markov.branches)) {
+          if (typeof branchConfig !== "object") {
+            errors.push({
+              path: ["markov", "branches", branchName],
+              message: "Expected an object with branch configuration.",
+            });
+            continue;
+          }
+
+          const branchStringFields = [
+            "chain",
+            "rpcUrl",
+            "diamondAddress",
+            "explorerApiKey",
+            "explorerUrl",
+          ];
+
+          const bc: any = branchConfig as any;
+          for (const field of branchStringFields) {
+            const value = bc?.[field];
+            if (value !== undefined && typeof value !== "string") {
+              errors.push({
+                path: ["markov", "branches", branchName, field],
+                message: `Expected a string.`,
+              });
+            }
+          }
+        }
+      }
     }
   }
 
@@ -124,22 +138,35 @@ export async function resolvePluginConfig(
   const greeting = userConfig.myConfig?.greeting ?? "Hello";
   const myConfig = { greeting };
 
+  // Resolve branch configurations
+  const branches: Record<string, BranchConfig> = {};
+  if (userConfig.markov?.branches) {
+    for (const [name, userBranchConfig] of Object.entries(userConfig.markov.branches)) {
+      branches[name] = {
+        name,
+        chain: userBranchConfig.chain ?? "localhost",
+        rpcUrl: userBranchConfig.rpcUrl ?? "",
+        diamondAddress: userBranchConfig.diamondAddress ?? "",
+        explorerApiKey: userBranchConfig.explorerApiKey,
+        explorerUrl: userBranchConfig.explorerUrl,
+        createdAt: Date.now(), // Will be overwritten when loaded from storage
+      };
+    }
+  }
+
   // Resolve markov config with defaults
+  const m = (userConfig.markov as any) || {};
   const markov = {
-    chain: userConfig.markov?.chain ?? "localhost",
-    wallet: userConfig.markov?.wallet ?? "",
-    gasPrice: userConfig.markov?.gasPrice ?? "auto",
-    author: userConfig.markov?.author ?? "Anonymous",
-    aiApiKey: userConfig.markov?.aiApiKey,
-    aiModel: userConfig.markov?.aiModel ?? "gpt-4",
-    governanceAddress: userConfig.markov?.governanceAddress,
-    mcpEndpoint:
-      userConfig.markov?.mcpEndpoint ?? "https://mcp.blockscout.com/mcp",
-    agentverseApiToken: userConfig.markov?.agentverseApiToken,
-    historyPath: userConfig.markov?.historyPath ?? ".markov/history.json",
-    verbose: userConfig.markov?.verbose ?? false,
-    autoSync: userConfig.markov?.autoSync ?? true,
-  };
+    AGENTVERSE_API_TOKEN: m.AGENCYVERSE_API_TOKEN ?? m.AGENTVERSE_API_TOKEN, // tolerate minor typo if present
+    ASI_API_KEY: m.ASI_API_KEY,
+    Author: m.Author ?? "markov",
+    Auto_Sync: m.Auto_Sync ?? true,
+    Chain: m.Chain ?? "localhost",
+    Gas_Price: m.Gas_Price ?? 10000,
+    Governance_Address: m.Governance_Address,
+    Wallet_Address: m.Wallet_Address ?? "",
+    branches,
+  } as any;
 
   return {
     ...partiallyResolvedConfig,

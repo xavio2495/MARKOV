@@ -7,7 +7,7 @@ export interface ChainData {
   name: string;
   chain: string;
   icon?: string;
-  rpc: string[];
+  rpc: (string | unknown)[]; // RPC can be strings or objects with tracking/auth info
   features?: Array<{ name: string }>;
   faucets: string[];
   nativeCurrency: {
@@ -141,10 +141,15 @@ export class NetworkResolver {
   }
 
   /**
-   * Get RPC URLs for a chain (filters out empty strings)
+   * Get RPC URLs for a chain (filters out empty strings and non-string values)
    */
   getRpcUrls(chain: ChainData): string[] {
-    return chain.rpc.filter(url => url && url.trim().length > 0);
+    return chain.rpc.filter((url): url is string => {
+      // Ensure url is a string and not empty
+      if (typeof url !== 'string') return false;
+      const trimmed = url.trim();
+      return trimmed.length > 0;
+    });
   }
 
   /**

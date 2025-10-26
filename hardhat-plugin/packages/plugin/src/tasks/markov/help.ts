@@ -2,6 +2,10 @@ import type { HardhatRuntimeEnvironment } from "hardhat/types/hre";
 import type { TaskArguments } from "hardhat/types/tasks";
 import chalk from "chalk";
 
+interface MarkovHelpArguments extends TaskArguments {
+  command?: string;
+}
+
 // Color scheme constants for easy customization
 const COLORS = {
   // CLI components
@@ -44,20 +48,19 @@ function formatUsage(usage: string): string {
     .join(" ");
 }
 
-/**
- * Display help information for markov commands
- */
-export default async function helpTask(
-  _taskArguments: TaskArguments,
-  _hre: HardhatRuntimeEnvironment,
-) {
-  console.log("\n" + COLORS.BORDER("╔════════════════════════════════════════════════════════════════════╗"));
-  console.log(COLORS.BORDER("║") + COLORS.HEADER("                    MARKOV CLI - Command Reference                  ") + COLORS.BORDER("║"));
-  console.log(COLORS.BORDER("╚════════════════════════════════════════════════════════════════════╝\n"));
-  
-  console.log(COLORS.DESCRIPTION("\nRefer to ") + COLORS.NAME("https://markov.mintlify.app/cli-reference/") + COLORS.DESCRIPTION(" for detailed documentation.\n"));
+interface CommandDefinition {
+  name: string;
+  usage: string;
+  description: string;
+  args: Array<{ name: string; desc: string }>;
+  options: Array<{ name: string; desc: string }>;
+}
 
-  const commands = [
+/**
+ * Get all command definitions
+ */
+function getCommandDefinitions(): CommandDefinition[] {
+  return [
     {
       name: "help",
       usage: "markov help",
@@ -234,6 +237,55 @@ export default async function helpTask(
       options: [],
     },
   ];
+}
+
+/**
+ * Display detailed help for a single command
+ */
+function displayCommandHelp(cmd: CommandDefinition): void {
+  console.log("\n" + COLORS.BORDER("╔════════════════════════════════════════════════════════════════════╗"));
+  console.log(COLORS.BORDER("║") + COLORS.HEADER("                    MARKOV CLI - Command Reference                  ") + COLORS.BORDER("║"));
+  console.log(COLORS.BORDER("╚════════════════════════════════════════════════════════════════════╝\n"));
+  
+  console.log(COLORS.DESCRIPTION("\nRefer to ") + COLORS.NAME("https://markov.mintlify.app/cli-reference/") + COLORS.DESCRIPTION(" for detailed documentation.\n"));
+  
+  // Command name and description
+  console.log(COLORS.NAME(cmd.name));
+  console.log(`  ${COLORS.DESCRIPTION(cmd.description)}`);
+  
+  // Usage with colored components
+  console.log(`  ${COLORS.SECTION("Usage:")} ${COLORS.NPX} ${COLORS.HARDHAT} ${formatUsage(cmd.usage)}`);
+  
+  // Arguments section
+  if (cmd.args.length > 0) {
+    console.log(`  ${COLORS.ARGS_HEADER}`);
+    cmd.args.forEach((arg) => {
+      console.log(`    ${COLORS.ARGUMENT(arg.name.padEnd(30))} ${COLORS.ARG_DESC(arg.desc)}`);
+    });
+  }
+  
+  // Options section
+  if (cmd.options.length > 0) {
+    console.log(`  ${COLORS.OPTIONS_HEADER}`);
+    cmd.options.forEach((opt) => {
+      console.log(`    ${COLORS.OPTION(opt.name.padEnd(30))} ${COLORS.OPT_DESC(opt.desc)}`);
+    });
+  }
+  
+  console.log();
+}
+
+/**
+ * Display help for all commands
+ */
+function displayAllCommands(commands: CommandDefinition[]): void {
+  console.log("\n" + COLORS.BORDER("╔════════════════════════════════════════════════════════════════════╗"));
+  console.log(COLORS.BORDER("║") + COLORS.HEADER("                    MARKOV CLI - Command Reference                  ") + COLORS.BORDER("║"));
+  console.log(COLORS.BORDER("╚════════════════════════════════════════════════════════════════════╝\n"));
+  
+  console.log(COLORS.DESCRIPTION("\nRefer to ") + COLORS.NAME("https://markov.mintlify.app/cli-reference/") + COLORS.DESCRIPTION(" for detailed documentation.\n"));
+  
+  console.log(chalk.gray("For detailed help on a specific command, run:") + " " + chalk.yellow("npx hardhat markov help <command>") + "\n");
 
   // Print each command with details
   commands.forEach((cmd) => {
@@ -281,5 +333,36 @@ export default async function helpTask(
     console.log(COLORS.BORDER("║") + "    " + COLORS.EXAMPLE(example) + " ".repeat(Math.max(0, 60 - example.length)) + COLORS.BORDER("║"));
   });
   
+  
   console.log(COLORS.BORDER("╚════════════════════════════════════════════════════════════════════╝\n")); */
+}
+
+/**
+ * Display help information for markov commands
+ */
+export default async function helpTask(
+  taskArguments: TaskArguments,
+  _hre: HardhatRuntimeEnvironment,
+) {
+  const args = taskArguments as MarkovHelpArguments;
+  const commandName = args.command;
+
+  // Get all command definitions
+  const commands = getCommandDefinitions();
+
+  // If specific command requested, show only that command's help
+  if (commandName) {
+    const command = commands.find((cmd: CommandDefinition) => cmd.name === commandName);
+    if (!command) {
+      console.log(chalk.red(`\n✗ Unknown command: '${commandName}'\n`));
+      console.log(chalk.gray("Run") + " " + chalk.yellow("npx hardhat markov help") + " " + chalk.gray("to see all available commands.\n"));
+      return;
+    }
+    
+    displayCommandHelp(command);
+    return;
+  }
+
+  // Otherwise show all commands
+  displayAllCommands(commands);
 }

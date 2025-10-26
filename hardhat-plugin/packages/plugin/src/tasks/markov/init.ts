@@ -11,16 +11,14 @@ interface MarkovInitArguments extends TaskArguments {
   force?: boolean;
 }
 
-interface HistoryEntry {
-  version: string;
-  timestamp: string;
-  branch: string;
-  commits: any[];
-}
-
 /**
  * Initialize a new Diamond contract in the repository.
  * Creates contracts directory structure and .markov folder for version tracking.
+ * 
+ * NEW SIMPLIFIED ARCHITECTURE:
+ * - Only creates .markov/, branches/, and .gitignore
+ * - No commits folder, history.json, or HEAD file
+ * - Prompts user to run config command after initialization
  */
 export default async function markovInit(
   taskArguments: TaskArguments,
@@ -69,25 +67,33 @@ export default async function markovInit(
     // Step 1: Create contracts directory structure
     await createContractsStructure(hre.config.paths.root, diamondName);
     
-    // Step 2: Create .markov directory for version tracking
+    // Step 2: Create .markov directory (simplified - no commits, history.json, or HEAD)
     await createMarkovDirectory(hre.config.paths.root);
     
-    // Step 3: Create initial history file
-    await createHistoryFile(hre.config.paths.root, diamondName);
-    
-    console.log(chalk.green("\nInitialization complete!\n"));
+    console.log(chalk.green("\n✓ Initialization complete!\n"));
     console.log(chalk.cyan("Next steps:"));
-    console.log(chalk.white("  1. Review the generated Diamond contracts in"), chalk.yellow("contracts/"));
-    console.log(chalk.white("  2. Customize your facets in"), chalk.yellow("contracts/facets/"));
-    console.log(chalk.white("  3. Deploy your Diamond:"), chalk.green(`npx hardhat markov deploy DiamondCutFacet,DiamondLoupeFacet,OwnershipFacet`));
-    console.log(chalk.white("  4. Check status:"), chalk.green("npx hardhat markov status"));
+    console.log(chalk.white("  1. Configure Markov settings:"), chalk.green("npx hardhat markov config"));
+    console.log(chalk.white("  2. Review the generated Diamond contracts in"), chalk.yellow("contracts/"));
+    console.log(chalk.white("  3. Customize your facets in"), chalk.yellow("contracts/facets/"));
+    console.log(chalk.white("  4. Deploy your Diamond:"), chalk.green(`npx hardhat markov deploy`));
     console.log();
+    
+    // Prompt user to run config command
+    const shouldRunConfig = await promptUser(
+      chalk.cyan("\nWould you like to configure Markov settings now? (Y/n): ")
+    );
+    
+    if (shouldRunConfig) {
+      console.log(chalk.blue("\nLaunching configuration wizard...\n"));
+      // Run config command
+      await hre.tasks.getTask("markov:config").run({});
+    } else {
+      console.log(chalk.yellow("\nPlease run"), chalk.green("npx hardhat markov config"), chalk.yellow("to configure your settings before deploying.\n"));
+    }
     
   } catch (error) {
     console.error(chalk.red("\nInitialization failed:"), error instanceof Error ? error.message : error);
-    if (hre.config.markov?.verbose) {
       console.error(error);
-    }
     throw error;
   }
 }
@@ -101,10 +107,10 @@ async function checkIfInitialized(rootPath: string): Promise<{
 } | null> {
   const markovPath = path.join(rootPath, ".markov");
   const contractsPath = path.join(rootPath, "contracts");
-  const historyPath = path.join(markovPath, "history.json");
+  const configPath = path.join(markovPath, "config.json");
   const diamondFiles = existsSync(contractsPath) ? await fs.readdir(contractsPath).catch(() => []) : [];
   
-  const markovExists = existsSync(markovPath) && existsSync(historyPath);
+  const markovExists = existsSync(markovPath) && existsSync(configPath);
   const contractsExist = diamondFiles.some(file => 
     file.endsWith("Diamond.sol") || 
     file === "interfaces" || 
@@ -124,6 +130,7 @@ async function checkIfInitialized(rootPath: string): Promise<{
 
 /**
  * Prompt user for confirmation
+ * Returns true for "yes" (default for empty input in Y/n prompts)
  */
 async function promptUser(question: string): Promise<boolean> {
   const rl = readline.createInterface({
@@ -134,6 +141,13 @@ async function promptUser(question: string): Promise<boolean> {
   try {
     const answer = await rl.question(question);
     rl.close();
+    
+    // If question ends with (Y/n), default to yes on empty input
+    if (question.includes("(Y/n)")) {
+      return answer.trim() === '' || answer.trim().toLowerCase() === 'y' || answer.trim().toLowerCase() === 'yes';
+    }
+    
+    // Otherwise, require explicit yes
     return answer.trim().toLowerCase() === 'y' || answer.trim().toLowerCase() === 'yes';
   } catch (error) {
     rl.close();
@@ -323,6 +337,8 @@ contract OwnershipFacet is IERC173 {
 
 /**
  * Create .markov directory for version tracking
+ * NEW SIMPLIFIED VERSION: Only creates .markov/, branches/, and .gitignore
+ * No commits folder, history.json, or HEAD file
  */
 async function createMarkovDirectory(rootPath: string): Promise<void> {
   console.log(chalk.cyan("Step 2:"), chalk.white("Creating .markov directory..."));
@@ -330,84 +346,28 @@ async function createMarkovDirectory(rootPath: string): Promise<void> {
   const markovPath = path.join(rootPath, ".markov");
   await fs.mkdir(markovPath, { recursive: true });
   
-  // Create subdirectories
+  // Create branches subdirectory
   const branchesPath = path.join(markovPath, "branches");
-  const commitsPath = path.join(markovPath, "commits");
-  
   await fs.mkdir(branchesPath, { recursive: true });
-  await fs.mkdir(commitsPath, { recursive: true });
   
   console.log(chalk.gray("   ├─ .markov/"));
-  console.log(chalk.gray("   ├─ .markov/branches/"));
-  console.log(chalk.gray("   └─ .markov/commits/"));
+  console.log(chalk.gray("   └─ .markov/branches/"));
   
   // Create .gitignore for .markov directory
   const gitignore = `# Markov version tracking
-# You may want to commit this directory to track Diamond upgrade history
-# Uncomment the line below to ignore it:
-# *
+# Diamond contract deployment artifacts and build cache
+*.json.bak
+*.tmp
+node_modules/
+cache/
+artifacts/
+
+# Keep branch files but config.json is created by config command
+!branches/*.json
 `;
   await fs.writeFile(path.join(markovPath, ".gitignore"), gitignore);
+  console.log(chalk.green("   ✓ .gitignore created"));
+  
+  // DO NOT create config.json here - it will be created by the config command
   console.log(chalk.green("   ✓ .markov directory created\n"));
-}
-
-/**
- * Create initial history file
- */
-async function createHistoryFile(rootPath: string, diamondName: string): Promise<void> {
-  console.log(chalk.cyan("Step 3:"), chalk.white("Initializing version history..."));
-  
-  const markovPath = path.join(rootPath, ".markov");
-  const historyPath = path.join(markovPath, "history.json");
-  
-  const initialHistory: HistoryEntry = {
-    version: "1.0.0",
-    timestamp: new Date().toISOString(),
-    branch: "main",
-    commits: [
-      {
-        hash: generateHash("init"),
-        message: `Initialize ${diamondName} project`,
-        timestamp: new Date().toISOString(),
-        author: "markov-cli",
-        facets: [],
-        type: "init",
-      },
-    ],
-  };
-  
-  await fs.writeFile(historyPath, JSON.stringify(initialHistory, null, 2));
-  console.log(chalk.green("   ✓ history.json created"));
-  
-  // Create initial branch file
-  const branchFile = {
-    name: "main",
-    head: initialHistory.commits[0].hash,
-    created: new Date().toISOString(),
-  };
-  
-  await fs.writeFile(
-    path.join(markovPath, "branches", "main.json"),
-    JSON.stringify(branchFile, null, 2)
-  );
-  console.log(chalk.green("   ✓ main branch created"));
-  
-  // Create HEAD pointer
-  await fs.writeFile(path.join(markovPath, "HEAD"), "main");
-  console.log(chalk.green("   ✓ HEAD pointer set\n"));
-}
-
-/**
- * Generate a simple hash for commit identification
- */
-function generateHash(input: string): string {
-  const timestamp = Date.now().toString();
-  const combined = input + timestamp;
-  let hash = 0;
-  for (let i = 0; i < combined.length; i++) {
-    const char = combined.charCodeAt(i);
-    hash = (hash << 5) - hash + char;
-    hash = hash & hash; // Convert to 32bit integer
-  }
-  return Math.abs(hash).toString(16).padStart(8, "0");
 }

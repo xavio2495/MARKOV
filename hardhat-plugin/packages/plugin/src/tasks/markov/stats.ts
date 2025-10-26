@@ -3,7 +3,6 @@ import type { TaskArguments } from "hardhat/types/tasks";
 import chalk from "chalk";
 import { BlockscoutClient, CHAIN_IDS, getChainName } from "../../utils/blockscout.js";
 import { getNetworkResolver } from "../../utils/network-resolver.js";
-  console.log(chalk.bold.blue("\n====Smart Contract Statistics====\n"));
 
 interface MarkovStatsArguments extends TaskArguments {
   address: string;
@@ -58,6 +57,14 @@ export default async function markovStats(
   taskArguments: MarkovStatsArguments,
   hre: HardhatRuntimeEnvironment,
 ) {
+  // Centered header
+  const headerText = "Smart Contract Statistics";
+  const padding = Math.floor((68 - headerText.length) / 2);
+  const centeredHeader = " ".repeat(padding) + headerText + " ".repeat(68 - padding - headerText.length);
+  
+  console.log(chalk.blue("\n╔════════════════════════════════════════════════════════════════════╗"));
+  console.log(chalk.blue("║") + chalk.cyan.bold(centeredHeader) + chalk.blue("║"));
+  console.log(chalk.blue("╚════════════════════════════════════════════════════════════════════╝\n"));
 
   // Validate contract address
   const contractAddress = taskArguments.address;
@@ -127,7 +134,7 @@ async function getChainId(taskArguments: MarkovStatsArguments, hre: HardhatRunti
   }
 
   // Then try to get from Hardhat config
-  const configChainId = hre.config.markov?.chain;
+  const configChainId = (hre.config.markov as any)?.Chain;
 
   if (configChainId) {
     // Try to resolve chain name to chain ID
